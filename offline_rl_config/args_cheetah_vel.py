@@ -65,6 +65,7 @@ def get_args(rest_args):
     parser.add_argument('--relabel-type', type=str, default='generative', help='choose: gt, separate, generative')
     parser.add_argument('--cvae-hidden-size', type=int, default=64)
     parser.add_argument('--cvae-num-hidden-layers', type=int, default=1)
+    parser.add_argument('--cvae-z-dim', type=int, default=5)
     parser.add_argument('--generative-model-path', type=str, default=
         'logs/HalfCheetahVel-v0/generative__0__30_05_23_33_04/models/model5.pt')
     parser.add_argument('--aggregate-encoder-type', type=str, default='selfattn', help='choose: selfattn, mean')
