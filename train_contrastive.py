@@ -98,6 +98,7 @@ class OfflineContrastive(OfflineMetaLearner):
                 term_size=0, # encode (s,a,r,s') only
                 normalize=self.args.normalize_z
         	).to(ptu.device)
+            
 
 
         #else:
@@ -299,8 +300,8 @@ class OfflineContrastive(OfflineMetaLearner):
 
     def update(self, tasks):
         rl_losses_agg = {}
-        if self.args.log_train_time:
-	        time_cost = {'data_sampling':0, 'negatives_sampling':0, 'update_encoder':0, 'update_rl':0}
+        if self.args.log_train_time: 
+            time_cost = {'data_sampling':0, 'negatives_sampling':0, 'update_encoder':0, 'update_rl':0}
 
         for update in range(self.args.rl_updates_per_iter):
             if self.args.log_train_time:
@@ -459,8 +460,8 @@ class OfflineContrastive(OfflineMetaLearner):
             save_path = os.path.join(self.tb_logger.full_output_folder, 'vis_z')
             if not os.path.exists(save_path):
                 os.mkdir(save_path)
-            self.vis_sample_embeddings(os.path.join(save_path, "train_fig{0}.png".format(iteration)), trainset=True)
-            self.vis_sample_embeddings(os.path.join(save_path, "test_fig{0}.png".format(iteration)), trainset=False)
+            #self.vis_sample_embeddings(os.path.join(save_path, "train_fig{0}.png".format(iteration)), trainset=True)
+            #self.vis_sample_embeddings(os.path.join(save_path, "test_fig{0}.png".format(iteration)), trainset=False)
 
 
     # visualize the encodings of (s,a,r,s')
@@ -537,6 +538,166 @@ class OfflineContrastive(OfflineMetaLearner):
 
 
 
+class PredictiveContrastive(OfflineContrastive):
+    def __init__(self, args, train_dataset, train_goals, eval_dataset, eval_goals):
+        super().__init__(args, train_dataset, train_goals, eval_dataset, eval_goals)
+        action_size=self.args.act_space.n if self.args.act_space.__class__.__name__ == "Discrete" else self.args.action_dim
+        self.decoder = FlattenMlp(
+            input_size=self.args.obs_dim+self.args.task_embedding_size+action_size,
+            output_size=1+self.args.obs_dim,
+            hidden_sizes=[64,64]
+            ).to(ptu.device)
+        
+        self.encoder_optimizer = torch.optim.Adam(list(self.encoder.parameters())+list(self.decoder.parameters()), lr=self.args.encoder_lr)
+
+
+    def update(self, tasks):
+        rl_losses_agg = {}
+        if self.args.log_train_time: 
+            time_cost = {'data_sampling':0, 'negatives_sampling':0, 'update_encoder':0, 'update_rl':0}
+
+        for update in range(self.args.rl_updates_per_iter):
+            if self.args.log_train_time:
+                _t_cost = time.time()
+            #print('data sampling')
+            
+            # sample key, query, negative samples and train encoder
+            # (batchsize, dim)
+            queries, keys = self.sample_positive_pairs(self.args.contrastive_batch_size)
+            obs_q, actions_q, rewards_q, next_obs_q, terms_q = queries
+            obs_k, actions_k, rewards_k, next_obs_k, terms_k = keys
+
+            if self.args.log_train_time:
+                _t_now = time.time()
+                time_cost['data_sampling'] += (_t_now-_t_cost)
+                _t_cost = _t_now
+
+            # (batchsize, N, dim)
+            rewards_neg, next_obs_neg = self.create_negatives(obs_q, actions_q, self.args.n_negative_per_positive, next_state=next_obs_q, reward=rewards_q)
+            obs_neg = obs_q.unsqueeze(1).expand(-1, self.args.n_negative_per_positive, -1) # expand obs_q to (b, n_neg, dim), they share the same (s,a)
+            actions_neg = actions_q.unsqueeze(1).expand(-1, self.args.n_negative_per_positive, -1)
+
+            if self.args.log_train_time:
+                _t_now = time.time()
+                time_cost['negatives_sampling'] += (_t_now-_t_cost)
+                _t_cost = _t_now
+            
+            b_dot_N = self.args.contrastive_batch_size * self.args.n_negative_per_positive
+            q_z = self.encoder.forward(obs_q, actions_q, rewards_q, next_obs_q)
+            k_z = self.encoder.forward(obs_k, actions_k, rewards_k, next_obs_k)
+            neg_z = self.encoder.forward(obs_neg.reshape(b_dot_N, -1), actions_neg.reshape(b_dot_N, -1), 
+                rewards_neg.reshape(b_dot_N, -1), next_obs_neg.reshape(b_dot_N, -1)).view(
+                self.args.contrastive_batch_size, self.args.n_negative_per_positive, -1)
+            contrastive_loss = self.contrastive_loss(q_z, k_z, neg_z)
+
+            q_pred = self.decoder(
+                torch.cat([obs_q, actions_q, q_z],dim=-1)
+            )
+            q_target = torch.cat([next_obs_q, rewards_q], dim=-1)
+            pred_loss = torch.nn.functional.mse_loss(q_pred, q_target)
+
+            self.encoder_optimizer.zero_grad()
+            loss = pred_loss+contrastive_loss
+            loss.backward()
+            self.encoder_optimizer.step()
+
+            if self.args.log_train_time:
+                _t_now = time.time()
+                time_cost['update_encoder'] += (_t_now-_t_cost)
+                _t_cost = _t_now
+
+            rl_losses = {'contrastive_loss':contrastive_loss.item(), 'prediction_loss': pred_loss.item()}
+
+            for k, v in rl_losses.items():
+                if update == 0:  # first iterate - create list
+                    rl_losses_agg[k] = [v]
+                else:  # append values
+                    rl_losses_agg[k].append(v)
+        # take mean
+        for k in rl_losses_agg:
+            rl_losses_agg[k] = np.mean(rl_losses_agg[k])
+        self._n_rl_update_steps_total += self.args.rl_updates_per_iter
+
+        if self.args.log_train_time:
+            print(time_cost)
+
+        return rl_losses_agg
+
+
+class Predictive(OfflineContrastive):
+    def __init__(self, args, train_dataset, train_goals, eval_dataset, eval_goals):
+        super().__init__(args, train_dataset, train_goals, eval_dataset, eval_goals)
+        action_size=self.args.act_space.n if self.args.act_space.__class__.__name__ == "Discrete" else self.args.action_dim
+        self.decoder = FlattenMlp(
+            input_size=self.args.obs_dim+self.args.task_embedding_size+action_size,
+            output_size=1+self.args.obs_dim,
+            hidden_sizes=[64,64]
+            ).to(ptu.device)
+        
+        self.encoder_optimizer = torch.optim.Adam(list(self.encoder.parameters())+list(self.decoder.parameters()), lr=self.args.encoder_lr)
+
+
+    def update(self, tasks):
+        rl_losses_agg = {}
+        if self.args.log_train_time: 
+            time_cost = {'data_sampling':0, 'negatives_sampling':0, 'update_encoder':0, 'update_rl':0}
+
+        for update in range(self.args.rl_updates_per_iter):
+            if self.args.log_train_time:
+                _t_cost = time.time()
+            #print('data sampling')
+            
+            # sample key, query, negative samples and train encoder
+            # (batchsize, dim)
+            queries, keys = self.sample_positive_pairs(self.args.contrastive_batch_size)
+            obs_q, actions_q, rewards_q, next_obs_q, terms_q = queries
+            obs_k, actions_k, rewards_k, next_obs_k, terms_k = keys
+
+            obs = torch.cat([obs_q, obs_k], dim=0)
+            actions = torch.cat([actions_q, actions_k], dim=0)
+            rewards = torch.cat([rewards_q, rewards_k], dim=0)
+            next_obs = torch.cat([next_obs_q, next_obs_k], dim=0)
+
+            if self.args.log_train_time:
+                _t_now = time.time()
+                time_cost['data_sampling'] += (_t_now-_t_cost)
+                _t_cost = _t_now
+
+
+            z = self.encoder.forward(obs, actions, rewards, next_obs)
+            pred = self.decoder(
+                torch.cat([obs, actions, z],dim=-1)
+            )
+            q_target = torch.cat([next_obs, rewards], dim=-1)
+            pred_loss = torch.nn.functional.mse_loss(pred, q_target)
+
+            self.encoder_optimizer.zero_grad()
+            loss = pred_loss
+            loss.backward()
+            self.encoder_optimizer.step()
+
+            if self.args.log_train_time:
+                _t_now = time.time()
+                time_cost['update_encoder'] += (_t_now-_t_cost)
+                _t_cost = _t_now
+
+            rl_losses = {'prediction_loss': pred_loss.item()}
+
+            for k, v in rl_losses.items():
+                if update == 0:  # first iterate - create list
+                    rl_losses_agg[k] = [v]
+                else:  # append values
+                    rl_losses_agg[k].append(v)
+        # take mean
+        for k in rl_losses_agg:
+            rl_losses_agg[k] = np.mean(rl_losses_agg[k])
+        self._n_rl_update_steps_total += self.args.rl_updates_per_iter
+
+        if self.args.log_train_time:
+            print(time_cost)
+
+        return rl_losses_agg
+
 def main():
     parser = argparse.ArgumentParser()
     # parser.add_argument('--env-type', default='gridworld')
@@ -575,7 +736,7 @@ def main():
     train_dataset, train_goals = dataset[0:args.num_train_tasks], goals[0:args.num_train_tasks]
     eval_dataset, eval_goals = dataset[args.num_train_tasks:], goals[args.num_train_tasks:]
 
-    learner = OfflineContrastive(args, train_dataset, train_goals, eval_dataset, eval_goals)
+    learner = Predictive(args, train_dataset, train_goals, eval_dataset, eval_goals)
     learner.train()
 
 
