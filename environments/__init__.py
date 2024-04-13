@@ -96,3 +96,12 @@ register(
     kwargs={'entry_point': 'environments.mujoco.rand_param_envs.walker2d_rand_params:Walker2DRandParamsEnv',
             }
 )
+
+register(
+    'MyPendulum-v0',
+    entry_point='environments.pendulum:CustomPendulum',
+    kwargs={# 'entry_point': 'environments.pendulum:CustomPendulum',
+            #'max_episode_steps': 200
+            },
+    max_episode_steps=200
+)
