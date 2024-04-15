@@ -108,7 +108,8 @@ def get_args(rest_args):
 
     #parser.add_argument('--vae-model-name', default='no_relabel__29_06_13_08_41')
     # parser.add_argument('--vae-model-name', default='relabel__10_08_01_45_08')
-
+    parser.add_argument('--encoder-trainer',type=str, default='predictive')
+    parser.add_argument('--entropy-coeff', type=float, default=0.1, help='coefficient of entropy term in training the encoder')
     args = parser.parse_args(rest_args)
 
     return args

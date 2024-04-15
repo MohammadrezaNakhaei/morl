@@ -636,7 +636,7 @@ class EntropyMax(OfflineContrastive):
         
         self.behavior_policy = TanhGaussianPolicy(obs_dim=self.args.obs_dim+self.args.task_embedding_size,
                                     action_dim=self.args.action_dim,
-                                    hidden_sizes=self.args.policy_layers)
+                                    hidden_sizes=self.args.policy_layers).to(ptu.device)
         
         self.encoder_optimizer = torch.optim.Adam(list(self.encoder.parameters())+list(self.decoder.parameters()), lr=self.args.encoder_lr)
         self.behavior_optimizer = torch.optim.Adam(self.behavior_policy.parameters(),  lr=self.args.encoder_lr)
@@ -662,6 +662,20 @@ class EntropyMax(OfflineContrastive):
                 time_cost['data_sampling'] += (_t_now-_t_cost)
                 _t_cost = _t_now
 
+            obs = torch.cat([obs_k, obs_q], dim=0)
+            action = torch.cat([actions_k, actions_q], dim=0)
+            reward = torch.cat([rewards_k, rewards_q], dim=0)
+            next_obs = torch.cat([next_obs_k, next_obs_q], dim=0)
+            with torch.no_grad():
+                z = self.encoder.forward(obs, action, reward, next_obs)
+            extended_state = torch.cat([obs, z], dim=-1)
+            dist_behavior = self.behavior_policy.get_dist(extended_state)
+            behavior_loss = -dist_behavior.log_prob(action).sum()
+
+            # optimize the behavior policy
+            self.behavior_optimizer.zero_grad()
+            behavior_loss.backward()
+            self.behavior_optimizer.step()
             # (batchsize, N, dim)
             rewards_neg, next_obs_neg = self.create_negatives(obs_q, actions_q, self.args.n_negative_per_positive, next_state=next_obs_q, reward=rewards_q)
             obs_neg = obs_q.unsqueeze(1).expand(-1, self.args.n_negative_per_positive, -1) # expand obs_q to (b, n_neg, dim), they share the same (s,a)
@@ -679,28 +693,18 @@ class EntropyMax(OfflineContrastive):
                 rewards_neg.reshape(b_dot_N, -1), next_obs_neg.reshape(b_dot_N, -1)).view(
                 self.args.contrastive_batch_size, self.args.n_negative_per_positive, -1)
             contrastive_loss = self.contrastive_loss(q_z, k_z, neg_z)
-            
-            obs = torch.cat([obs_k, obs_q], dim=0)
-            action = torch.cat([actions_k, actions_q], dim=0)
-            reward = torch.cat([rewards_k, rewards_q], dim=0)
-            next_obs = torch.cat([next_obs_k, next_obs_q], dim=0)
-            z = torch.cat([k_z, q_z])
 
+            z = torch.cat([k_z, q_z])
             pred = self.decoder(
                 torch.cat([obs, action, z],dim=-1)
             )
             q_target = torch.cat([next_obs, reward], dim=-1)
             pred_loss = torch.nn.functional.mse_loss(pred, q_target)
-
             extended_state = torch.cat([obs, z], dim=-1)
-            dist_behavior = self.behavior_policy(extended_state)
-            behavior_loss = -dist_behavior.logprob(action)
+            dist_behavior = self.behavior_policy.get_dist(extended_state)
             entropy_loss = -dist_behavior.entropy()
 
-            self.behavior_optimizer.zero_grad()
-            behavior_loss.backward()
-            self.behavior_optimizer.step()
-
+            # update the encoder
             self.encoder_optimizer.zero_grad()
             loss = pred_loss+contrastive_loss+entropy_loss*self.args.entropy_coeff
             loss.backward()
@@ -814,8 +818,7 @@ def main():
     # parser.add_argument('--env-type', default='point_robot_sparse')
     # parser.add_argument('--env-type', default='cheetah_vel')
     parser.add_argument('--env-type', default='gridworld_block')
-    parser.add_argument('--encoder-trainer',type=str, default='predictive')
-    parser.add_argument('--entropy-coeff', type=float, default=0.1, help='coefficient of entropy term in training the encoder')
+
     args, rest_args = parser.parse_known_args()
     env = args.env_type
 

@@ -101,7 +101,8 @@ def get_args(rest_args):
     # parser.add_argument('--relabelled-data-dir', default='data_bamdp_with_rr')
     parser.add_argument('--data-dir', default='data')
     parser.add_argument('--main-data-dir', default='./batch_data')
-
+    parser.add_argument('--encoder-trainer',type=str, default='predictive')
+    parser.add_argument('--entropy-coeff', type=float, default=0.1, help='coefficient of entropy term in training the encoder')
     #parser.add_argument('--vae-dir', default='./trained_vae')
 
     #parser.add_argument('--vae-model-name', default='no_relabel__29_06_13_08_41')
