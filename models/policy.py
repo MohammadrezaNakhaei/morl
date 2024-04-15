@@ -124,3 +124,27 @@ class TanhGaussianPolicy(Mlp, ExplorationPolicy):
                     action = tanh_normal.sample()
 
         return action, mean, log_std, log_prob
+    
+    def get_dist(
+            self,
+            obs,
+    ):
+        """
+        :param obs: Observation
+        :param deterministic: If True, do not sample
+        :param return_log_prob: If True, return a sample and its log probability
+        """
+        h = obs
+        for i, fc in enumerate(self.fcs):
+            h = self.hidden_activation(fc(h))
+        mean = self.last_fc(h)
+        if self.std is None:
+            log_std = self.last_fc_log_std(h)
+            log_std = torch.clamp(log_std, LOG_SIG_MIN, LOG_SIG_MAX)
+            std = torch.exp(log_std)
+        else:
+            std = self.std
+            log_std = self.log_std
+        tanh_normal = TanhNormal(mean, std)
+        return tanh_normal
+
