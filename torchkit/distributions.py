@@ -134,3 +134,6 @@ class TanhNormal(Distribution):
             return torch.tanh(z), z
         else:
             return torch.tanh(z)
+
+    def entropy(self, ):
+        return torch.log(self.normal_std).sum()
