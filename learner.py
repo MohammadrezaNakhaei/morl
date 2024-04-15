@@ -33,7 +33,6 @@ class Learner:
 
         # make sure everything has the same seed
         utl.seed(self.args.seed)
-
         # initialise environment
         self.env = make_env(self.args.env_name,
                             self.args.max_rollouts_per_task,
@@ -43,6 +42,8 @@ class Learner:
                             if 'modify_init_state_dist' in self.args else False,
                             on_circle_init_state=self.args.on_circle_init_state
                             if 'on_circle_init_state' in self.args else True)
+        if self.args.env_name == 'MyPendulum-v0':
+            self.env.set_goal(args.task)
 
         # saving buffer with task in name folder
         if hasattr(self.args, 'save_buffer') and self.args.save_buffer:
@@ -84,6 +85,7 @@ class Learner:
         #print(self.env.action_space)
 
         # simulate env step to get reward types
+        _ = unwrapped_env.reset()
         _, _, _, info = unwrapped_env.step(unwrapped_env.action_space.sample())
         reward_types = [reward_type for reward_type in list(info.keys()) if reward_type.startswith('reward')]
 

@@ -6,7 +6,7 @@ import numpy as np
 from learner import Learner
 from torchkit.pytorch_utils import set_gpu_mode
 from data_collection_config import args_cheetah_vel, args_gridworld_block, \
-args_ant_dir, args_point_robot_v1, args_hopper_param, args_walker_param
+args_ant_dir, args_point_robot_v1, args_hopper_param, args_walker_param, args_pendulum
 
 
 def main():
@@ -39,6 +39,8 @@ def main():
         args = args_hopper_param.get_args(rest_args)
     elif env == 'walker_param':
         args = args_walker_param.get_args(rest_args)
+    elif env=='pendulum':
+        args = args_pendulum.get_args(rest_args)
     else:
         raise NotImplementedError
 
