@@ -706,7 +706,7 @@ class EntropyMax(OfflineContrastive):
 
             # update the encoder
             self.encoder_optimizer.zero_grad()
-            loss = pred_loss+contrastive_loss+entropy_loss*self.args.entropy_coeff
+            loss = pred_loss*self.args.pred_coeff+contrastive_loss+entropy_loss*self.args.entropy_coeff
             loss.backward()
             self.encoder_optimizer.step()
 
