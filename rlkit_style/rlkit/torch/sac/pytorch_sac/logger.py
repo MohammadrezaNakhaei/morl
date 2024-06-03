@@ -7,6 +7,9 @@ import shutil
 import torch
 import numpy as np
 from termcolor import colored
+import wandb 
+import time 
+
 
 COMMON_TRAIN_FORMAT = [
     ('episode', 'E', 'int'),
@@ -120,18 +123,17 @@ class Logger(object):
                  save_tb=False,
                  log_frequency=10000,
                  agent='sac',
-                 goal_idx=0):
+                 cfgs=None,):
+        goal_idx = cfgs.goal_idx
         self._log_dir = log_dir
         self._log_frequency = log_frequency
         if save_tb:
-            tb_dir = os.path.join(log_dir, 'tb')
-            if os.path.exists(tb_dir):
-                try:
-                    shutil.rmtree(tb_dir)
-                except:
-                    print("logger.py warning: Unable to remove tb directory")
-                    pass
-            self._sw = SummaryWriter(tb_dir)
+            self._sw = wandb.init(
+                project='MORL-Data',
+                group=f'{cfgs.env_name}',
+                name=f'{cfgs.env_name}-{cfgs.goal_idx}-{time.time()}',
+                config=cfgs,
+            )
         else:
             self._sw = None
         # each agent has specific output format for training
@@ -150,17 +152,17 @@ class Logger(object):
 
     def _try_sw_log(self, key, value, step):
         if self._sw is not None:
-            self._sw.add_scalar(key, value, step)
+            self._sw.log({name: value, "step": step})
 
     def _try_sw_log_video(self, key, frames, step):
         if self._sw is not None:
             frames = torch.from_numpy(np.array(frames))
             frames = frames.unsqueeze(0)
-            self._sw.add_video(key, frames, step, fps=30)
+            self._sw.log({f"{key}-{step}": wandb.Video(frames, fps=6)})
 
     def _try_sw_log_histogram(self, key, histogram, step):
-        if self._sw is not None:
-            self._sw.add_histogram(key, histogram, step)
+        pass 
+
 
     def log(self, key, value, step, n=1, log_frequency=1):
         if not self._should_log(step, log_frequency):

@@ -45,14 +45,15 @@ class Workspace(object):
         self.work_dir = os.path.join(self.work_dir, env_name, f'goal_idx{goal_idx}')
         os.makedirs(self.work_dir, exist_ok=True)
         print(f'workspace: {self.work_dir}')
-
+        cfg.env_name = env_name
+        cfg.goal_idx = goal_idx
         self.cfg = cfg
 
         self.logger = Logger(self.work_dir,
                              save_tb=cfg.log_save_tb,
                              log_frequency=cfg.log_frequency,
                              agent=cfg.agent.name,
-                             goal_idx=goal_idx)
+                             cfgs=cfg)
 
         utils.set_seed_everywhere(cfg.seed)
         self.device = torch.device(cfg.device)
