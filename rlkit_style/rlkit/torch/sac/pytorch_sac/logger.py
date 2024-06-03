@@ -152,7 +152,7 @@ class Logger(object):
 
     def _try_sw_log(self, key, value, step):
         if self._sw is not None:
-            self._sw.log({name: value, "step": step})
+            self._sw.log({key: value, "step": step})
 
     def _try_sw_log_video(self, key, frames, step):
         if self._sw is not None:
