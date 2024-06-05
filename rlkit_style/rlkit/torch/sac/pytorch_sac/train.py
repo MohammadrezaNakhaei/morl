@@ -103,7 +103,7 @@ class Workspace(object):
 
             self.video_recorder.save(f'{self.step}.mp4')
             self.logger.log('eval/episode_reward', episode_reward, self.step)
-            np.save(os.path.join(self.work_dir, f'trj_eval{episode}_step{self.eval_times*self.cfg.eval_frequency}.npy'), np.array(trj))
+            np.save(os.path.join(self.work_dir, f'trj_eval{episode}_step{self.eval_times*self.cfg.eval_frequency}.npy'), np.array(trj, dtype='object'))
         self.logger.dump(self.step)
 
     def evaluate_sample(self, eval_start_num=0):
@@ -126,7 +126,7 @@ class Workspace(object):
 
             self.video_recorder.save(f'{self.step}.mp4')
             self.logger.log('eval_sample/episode_reward', episode_reward, self.step)
-            np.save(os.path.join(self.work_dir, f'trj_evalsample{episode+eval_start_num}_step{self.eval_times*self.cfg.eval_frequency}.npy'), np.array(trj))
+            np.save(os.path.join(self.work_dir, f'trj_evalsample{episode+eval_start_num}_step{self.eval_times*self.cfg.eval_frequency}.npy'), np.array(trj, dtype='object'))
         self.logger.dump(self.step)
 
     def run(self):
