@@ -139,7 +139,7 @@ class Workspace(object):
         episode, episode_reward, done = 0, 0, True
         start_time = time.time()
         self.eval_times = 0
-        while self.step < self.cfg.num_train_steps:
+        while self.step <= self.cfg.num_train_steps:
             if done:
                 if self.step > 0:
                     self.logger.log('train/duration',
