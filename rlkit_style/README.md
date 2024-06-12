@@ -18,8 +18,8 @@ Simply install it the same way as MuJoCo200. To switch between different MuJoCo 
 export MUJOCO_PY_MJPRO_PATH=~/.mujoco/mjpro131
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.mujoco/mjpro131/bin
 
-export MUJOCO_PY_MJPRO_PATH=~/.mujoco/mujoco200
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.mujoco/mujoco200/bin
+export MUJOCO_PY_MJPRO_PATH=~/.mujoco/mujoco210
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.mujoco/mujoco210/bin
 ```
 
 The environments make use of the module `rand_param_envs` which is submoduled in this repository https://github.com/dennisl88/rand_param_envs. We modify some parameters of environment in random_param_envs.
