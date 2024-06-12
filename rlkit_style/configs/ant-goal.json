@@ -1,5 +1,5 @@
 {
-    "env_name": "ant-goal",
+    "env_name": "ant-goal-custom",
     "n_train_tasks": 30,
     "n_eval_tasks": 10,
     "interpolation": true,

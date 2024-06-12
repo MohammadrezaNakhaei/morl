@@ -1,5 +1,5 @@
 {
-    "env_name": "cheetah-vel",
+    "env_name": "cheetah-vel-custom",
     "n_train_tasks": 30,
     "n_eval_tasks": 10,
     "interpolation": true,
