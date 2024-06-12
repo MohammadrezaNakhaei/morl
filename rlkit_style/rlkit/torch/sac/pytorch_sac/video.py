@@ -27,7 +27,7 @@ class VideoRecorder(object):
                                    camera_id=self.camera_id) # for mujoco env
                 self.frames.append(frame)
             else:
-                env.render()
+                env.render('rgb_array')
 
 
     def save(self, file_name):
