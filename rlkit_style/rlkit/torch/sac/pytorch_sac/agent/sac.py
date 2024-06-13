@@ -87,7 +87,7 @@ class SACAgent(Agent):
         current_Q1, current_Q2 = self.critic(obs, action)
         critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
             current_Q2, target_Q)
-        logger.log('train_critic/loss', critic_loss, step, log_frequency=10)
+        logger.log('train_critic/loss', critic_loss, step, log_frequency=100)
 
         # Optimize the critic
         self.critic_optimizer.zero_grad()
@@ -105,9 +105,9 @@ class SACAgent(Agent):
         actor_Q = torch.min(actor_Q1, actor_Q2)
         actor_loss = (self.alpha.detach() * log_prob - actor_Q).mean()
 
-        logger.log('train_actor/loss', actor_loss, step, log_frequency=10)
-        logger.log('train_actor/target_entropy', self.target_entropy, step, log_frequency=10)
-        logger.log('train_actor/entropy', -log_prob.mean(), step, log_frequency=10)
+        logger.log('train_actor/loss', actor_loss, step, log_frequency=100)
+        logger.log('train_actor/target_entropy', self.target_entropy, step, log_frequency=100)
+        logger.log('train_actor/entropy', -log_prob.mean(), step, log_frequency=100)
 
         # optimize the actor
         self.actor_optimizer.zero_grad()
@@ -119,8 +119,8 @@ class SACAgent(Agent):
         self.log_alpha_optimizer.zero_grad()
         alpha_loss = (self.alpha *
                       (-log_prob - self.target_entropy).detach()).mean()
-        logger.log('train_alpha/loss', alpha_loss, step, log_frequency=10)
-        logger.log('train_alpha/value', self.alpha, step, log_frequency=10)
+        logger.log('train_alpha/loss', alpha_loss, step, log_frequency=100)
+        logger.log('train_alpha/value', self.alpha, step, log_frequency=100)
         alpha_loss.backward()
         self.log_alpha_optimizer.step()
 
