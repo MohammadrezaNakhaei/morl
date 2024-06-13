@@ -133,6 +133,7 @@ class Logger(object):
                 group=f'{cfgs.env_name}',
                 name=f'{cfgs.env_name}-{cfgs.goal_idx}-{time.time()}',
                 config=cfgs,
+                settings=wandb.Settings(_disable_stats=True)
             )
         else:
             self._sw = None
