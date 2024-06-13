@@ -83,7 +83,7 @@ def main(config, gpu, docker, debug, eval, goal_idx=0, seed=0, split=1, split_id
     if len(list(task_idx_list)) > 1:
         p.starmap(experiment, product([variant], [cfg], list(task_idx_list)))
     else:
-        experiment(variant=variant, cfg=cfg, goal_idx=goal_idx)
+        experiment(variant=variant, cfg=cfg, goal_idx=split_idx)
 
 
 if __name__ == '__main__':
