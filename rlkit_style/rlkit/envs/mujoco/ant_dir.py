@@ -54,7 +54,6 @@ class AntDirEnv(MultitaskAntEnv):
 class AntDirEnvCustom(AntEnv):
 
     def __init__(self, idx=0, **kwargs):
-        super(AntDirEnvCustom, self).__init__()
         self.num_tasks = 40
         self.num_train = 20
         self.num_moderate = 10
@@ -66,6 +65,7 @@ class AntDirEnvCustom(AntEnv):
         self._goal = self._task['goal']
         self._max_episode_steps = 200
         self._step = 0
+        super(AntDirEnvCustom, self).__init__()
 
     def step(self, action):
         torso_xyz_before = np.array(self.get_body_com("torso"))
