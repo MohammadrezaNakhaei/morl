@@ -30,7 +30,7 @@
         "eval_epoch": [100000, 1000000, 50000],
         "sample": 1,
         "n_trj": 50,
-        "data_dir": "./offline_dataset/ant-dir",
+        "data_dir": "./offline_dataset/ant-dir-custom",
 
         "divergence_name": "kl",
         "use_brac": 1,
