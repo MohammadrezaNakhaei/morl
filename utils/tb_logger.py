@@ -1,7 +1,7 @@
 import json
 import datetime
 import os
-from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 from torchkit import pytorch_utils as ptu
 
 
