@@ -304,7 +304,7 @@ def setup_logger(
         with open(osp.join(log_dir, "script_name.txt"), "w") as f:
             f.write(script_name)
     wandb_logger = wandb.init(
-        group=exp_prefix, 
+        group=f"{variant['algo_type']}-{exp_prefix}", 
         project='MORL', 
         name=f'{exp_prefix}-{seed}-{time.time()}', 
         settings=wandb.Settings(_disable_stats=True),
