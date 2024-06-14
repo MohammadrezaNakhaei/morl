@@ -218,7 +218,7 @@ def create_log_dir(exp_prefix, exp_id=None, seed=None, base_log_dir=None):
     os.makedirs(log_dir, exist_ok=True)
     return log_dir
 
-
+import wandb
 def setup_logger(
         exp_prefix="default",
         exp_id=0,
@@ -303,7 +303,13 @@ def setup_logger(
     if script_name is not None:
         with open(osp.join(log_dir, "script_name.txt"), "w") as f:
             f.write(script_name)
-    return log_dir
+    wandb_logger = wandb.init(
+        group=exp_prefix, 
+        project='MORL', 
+        name=f'{exp_prefix}-{seed}-{time.time()}', 
+        settings=wandb.Settings(_disable_stats=True),
+        config=variant,)
+    return log_dir, wandb_logger
 
 
 def dict_to_safe_json(d):

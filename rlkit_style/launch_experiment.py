@@ -112,6 +112,17 @@ def experiment(variant, seed=None):
             input_size=obs_dim + action_dim + latent_dim,
             output_size=1
         )
+        task_modes = env.task_modes()
+        algorithm = CSROSoftActorCritic(
+            env=env,
+            train_tasks=task_modes['train'],
+            eval_tasks=task_modes['moderate'],
+            extreme_tasks=task_modes['extreme'],
+            nets=[agent, qf1, qf2, vf, c, club_model],
+            latent_dim=latent_dim,
+            **variant['algo_params']
+        )
+        """
         if 'interpolation' in variant.keys() and variant['interpolation']:
             if 'randomize_tasks' in variant.keys() and variant['randomize_tasks']:
                 train_tasks = np.random.choice(len(tasks), size=variant['n_train_tasks'], replace=False)
@@ -159,7 +170,7 @@ def experiment(variant, seed=None):
                     nets=[agent, qf1, qf2, vf, c, club_model],
                     latent_dim=latent_dim,
                     **variant['algo_params']
-                )
+                )"""
     else:
         NotImplemented
 
@@ -189,7 +200,7 @@ def experiment(variant, seed=None):
     # create logging directory
     # TODO support Docker
     exp_id = 'debug' if DEBUG else variant['util_params']['exp_name']
-    experiment_log_dir = setup_logger(
+    experiment_log_dir, wandb_logger = setup_logger(
         variant['env_name'],
         variant=variant,
         exp_id=exp_id,
@@ -205,7 +216,8 @@ def experiment(variant, seed=None):
         pathlib.Path(pickle_dir).mkdir(parents=True, exist_ok=True)
 
     # run the algorithm
-    algorithm.train()
+    algorithm.train(wandb_logger)
+    wandb_logger.finish()
 
 def deep_update_dict(fr, to):
     ''' update dict of dicts with new values '''
