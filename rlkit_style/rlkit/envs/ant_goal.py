@@ -123,7 +123,7 @@ class AntGoalEnvCustom(AntEnv):
         self.reset()
         
     def get_all_task_idx(self):
-        return range(len(self.num_tasks))
+        return range(self.num_tasks)
     
     def reset(self):
         self._step = 0
