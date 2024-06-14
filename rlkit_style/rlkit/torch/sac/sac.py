@@ -20,6 +20,7 @@ class CSROSoftActorCritic(OfflineMetaRLAlgorithm):
             env,
             train_tasks,
             eval_tasks,
+            extreme_tasks,
             latent_dim,
             nets,
             goal_radius=1,
@@ -33,6 +34,7 @@ class CSROSoftActorCritic(OfflineMetaRLAlgorithm):
             agent=nets[0],
             train_tasks=train_tasks,
             eval_tasks=eval_tasks,
+            extreme_tasks=extreme_tasks,
             goal_radius=goal_radius,
             **kwargs
         )
@@ -404,56 +406,34 @@ class CSROSoftActorCritic(OfflineMetaRLAlgorithm):
             # Manually zero the gradients after updating weights
             self._alpha_var.grad.zero_()
         self.loss["a_loss"] = a_loss.item()
-        if self._num_steps % self._visit_num_steps_train == 0:
-            print(self.loss)
-        # save some statistics for eval
-        if self.eval_statistics is None:
-            # eval should set this to None.
-            # this way, these statistics are only computed for one batch.
-            self.eval_statistics = OrderedDict()
+        
+        for i in range(len(self.agent.z_means[0])):
+            z_mean = ptu.get_numpy(self.agent.z_means[0][i])
+            name = f'train/z_mean_{i}'
+            self.eval_statistics[name] = z_mean
 
-            # z_mean = np.mean(np.abs(ptu.get_numpy(self.agent.z_means[0])))
-            for i in range(len(self.agent.z_means[0])):
-                z_mean = ptu.get_numpy(self.agent.z_means[0][i])
-                name = 'Z mean train' + str(i)
-                self.eval_statistics[name] = z_mean
-                
-            #z_mean1 = ptu.get_numpy(self.agent.z_means[0][0])
-            #z_mean2 = ptu.get_numpy(self.agent.z_means[0][1])
-            #z_mean3 = ptu.get_numpy(self.agent.z_means[0][2])
-            #z_mean4 = ptu.get_numpy(self.agent.z_means[0][3])
-            #z_mean5 = ptu.get_numpy(self.agent.z_means[0][4])
+        z_sig = np.mean(ptu.get_numpy(self.agent.z_vars[0]))
 
-            z_sig = np.mean(ptu.get_numpy(self.agent.z_vars[0]))
-            #self.eval_statistics['Z mean train1'] = z_mean1
-            #self.eval_statistics['Z mean train2'] = z_mean2
-            #self.eval_statistics['Z mean train3'] = z_mean3
-            #self.eval_statistics['Z mean train4'] = z_mean4
-            #self.eval_statistics['Z mean train5'] = z_mean5
+        self.eval_statistics['train/Z_variance'] = z_sig
 
-            self.eval_statistics['Z variance train'] = z_sig
-            self.eval_statistics['task idx'] = indices[0]
+        if self.use_club:
+            self.eval_statistics['train/loss_club_model'] = ptu.get_numpy(club_model_loss)
+            self.eval_statistics['train/loss_club'] = ptu.get_numpy(club_loss)
+        if self.use_FOCAL_cl:
+            self.eval_statistics['train/loss_focal'] = ptu.get_numpy(z_loss)
 
-            if self.use_club:
-                self.eval_statistics['Club model Loss'] = ptu.get_numpy(club_model_loss)
-                self.eval_statistics['Club Loss'] = ptu.get_numpy(club_loss)
-            if self.use_FOCAL_cl:
-                self.eval_statistics['Z Loss'] = ptu.get_numpy(z_loss)
-
-            self.eval_statistics['QF Loss'] = np.mean(ptu.get_numpy(qf_loss))
-            self.eval_statistics['VF Loss'] = np.mean(ptu.get_numpy(vf_loss))
-            self.eval_statistics['Policy Loss'] = np.mean(ptu.get_numpy(
-                policy_loss
-            ))
-            if self.use_brac:
-                self.eval_statistics['Dual Critic Loss'] = np.mean(ptu.get_numpy(c_loss))
-            self.eval_statistics.update(create_stats_ordered_dict('Q Predictions',  ptu.get_numpy(q1_pred)))
-            self.eval_statistics.update(create_stats_ordered_dict('V Predictions',  ptu.get_numpy(v_pred)))
-            self.eval_statistics.update(create_stats_ordered_dict('Log Pis',        ptu.get_numpy(log_pi)))
-            self.eval_statistics.update(create_stats_ordered_dict('Policy mu',      ptu.get_numpy(policy_mean)))
-            self.eval_statistics.update(create_stats_ordered_dict('Policy log std', ptu.get_numpy(policy_log_std)))
-            self.eval_statistics.update(create_stats_ordered_dict('alpha',          ptu.get_numpy(self._alpha_var).reshape(-1)))
-            self.eval_statistics.update(create_stats_ordered_dict('div_estimate',   ptu.get_numpy(div_estimate)))
+        self.eval_statistics['train/loss_qf'] = np.mean(ptu.get_numpy(qf_loss))
+        self.eval_statistics['train/loss_vf'] = np.mean(ptu.get_numpy(vf_loss))
+        self.eval_statistics['train/loss_policy'] = np.mean(ptu.get_numpy(
+            policy_loss
+        ))
+        if self.use_brac:
+            self.eval_statistics['train/loss_dual_brack'] = np.mean(ptu.get_numpy(c_loss))
+        self.eval_statistics['train/avg_q_values'] =  ptu.get_numpy(q1_pred).mean()
+        self.eval_statistics['train/avg_v_values'] =  ptu.get_numpy(v_pred).mean()
+        self.eval_statistics['train/log_policy'] =  ptu.get_numpy(log_pi).mean()
+        self.eval_statistics['train/alpha'] =  ptu.get_numpy((self._alpha_var).reshape(-1)).mean()
+        self.eval_statistics['train/div_estimate'] =  ptu.get_numpy(div_estimate).mean()
         return ptu.get_numpy(self.agent.z_means), ptu.get_numpy(self.agent.z_vars)
 
     def get_epoch_snapshot(self, epoch):

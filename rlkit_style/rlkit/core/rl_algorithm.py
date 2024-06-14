@@ -20,6 +20,7 @@ class OfflineMetaRLAlgorithm(metaclass=abc.ABCMeta):
             agent,
             train_tasks,
             eval_tasks,
+            extreme_tasks,
             goal_radius,
             eval_deterministic=True,
             render=False,
@@ -40,7 +41,8 @@ class OfflineMetaRLAlgorithm(metaclass=abc.ABCMeta):
         self.agent                           = agent
         self.train_tasks                     = train_tasks
         self.eval_tasks                      = eval_tasks
-        self.n_tasks                         = len(train_tasks) + len(eval_tasks)
+        self.extreme_tasks                   = extreme_tasks
+        self.n_tasks                         = len(train_tasks) + len(eval_tasks) + len(extreme_tasks)
         self.goal_radius                     = goal_radius
 
         self.meta_batch                      = kwargs['meta_batch']
@@ -75,11 +77,12 @@ class OfflineMetaRLAlgorithm(metaclass=abc.ABCMeta):
 
         self.eval_deterministic              = eval_deterministic
         self.render                          = render
-        self.eval_statistics                 = None
+        self.eval_statistics                 = {}
         self.render_eval_paths               = render_eval_paths
         self.plotter                         = plotter
         
         self.eval_buffer       = MultiTaskReplayBuffer(self.replay_buffer_size, env, self.eval_tasks,  self.goal_radius)
+        self.extreme_buffer    = MultiTaskReplayBuffer(self.replay_buffer_size, env, self.extreme_tasks,  self.goal_radius)
         self.replay_buffer     = MultiTaskReplayBuffer(self.replay_buffer_size, env, self.train_tasks, self.goal_radius)
         # offline sampler which samples from the train/eval buffer
         self.offline_sampler   = OfflineInPlacePathSampler(env=env, policy=agent, max_path_length=self.max_path_length)
@@ -100,26 +103,35 @@ class OfflineMetaRLAlgorithm(metaclass=abc.ABCMeta):
     def init_buffer(self):
         train_trj_paths = []
         eval_trj_paths = []
+        extreme_trj_paths = []
         # trj entry format: [obs, action, reward, new_obs]
         if self.sample:
-            for i in range(self.n_tasks):
-                for j in range(self.train_epoch[0], self.train_epoch[1], self.train_epoch[2]):
+            for i in self.train_tasks:
+                for j in range(self.train_epoch[0], self.train_epoch[1]+1, self.train_epoch[2]):
                     for k in range(self.n_trj):
                         train_trj_paths += [os.path.join(self.data_dir, f"goal_idx{i}", f"trj_evalsample{k}_step{j}.npy")]
-            for i in range(self.n_tasks):
-                for j in range(self.eval_epoch[0], self.eval_epoch[1], self.eval_epoch[2]):
+            for i in self.eval_tasks:
+                for j in range(self.eval_epoch[0], self.eval_epoch[1]+1, self.eval_epoch[2]):
                     for k in range(self.n_trj):
                         eval_trj_paths += [os.path.join(self.data_dir, f"goal_idx{i}", f"trj_evalsample{k}_step{j}.npy")]
+            for i in self.extreme_tasks:
+                for j in range(self.train_epoch[0], self.train_epoch[1]+1, self.train_epoch[2]):
+                    for k in range(self.n_trj):
+                        extreme_trj_paths += [os.path.join(self.data_dir, f"goal_idx{i}", f"trj_evalsample{k}_step{j}.npy")]                
         else:
-            for i in range(self.n_tasks):
-                for j in range(self.train_epoch[0], self.train_epoch[1], self.train_epoch[2]):
+            for i in self.train_tasks:
+                for j in range(self.train_epoch[0], self.train_epoch[1]+1, self.train_epoch[2]):
                     for k in range(self.n_trj):
                         train_trj_paths += [os.path.join(self.data_dir, f"goal_idx{i}", f"trj_eval{k}_step{j}.npy")]
-            for i in range(self.n_tasks):
-                for j in range(self.eval_epoch[0], self.eval_epoch[1], self.eval_epoch[2]):
+            for i in self.eval_tasks:
+                for j in range(self.eval_epoch[0], self.eval_epoch[1]+1, self.eval_epoch[2]):
                     for k in range(self.n_trj):
                         eval_trj_paths += [os.path.join(self.data_dir, f"goal_idx{i}", f"trj_eval{k}_step{j}.npy")]
-        
+            for i in self.extreme_tasks:
+                for j in range(self.train_epoch[0], self.train_epoch[1]+1, self.train_epoch[2]):
+                    for k in range(self.n_trj):
+                        extreme_trj_paths += [os.path.join(self.data_dir, f"goal_idx{i}", f"trj_eval{k}_step{j}.npy")]      
+                            
         train_paths = [train_trj_path for train_trj_path in train_trj_paths if
                        int(train_trj_path.split('/')[-2].split('goal_idx')[-1]) in self.train_tasks]
         train_task_idxs = [int(train_trj_path.split('/')[-2].split('goal_idx')[-1]) for train_trj_path in train_trj_paths if
@@ -128,7 +140,11 @@ class OfflineMetaRLAlgorithm(metaclass=abc.ABCMeta):
                       int(eval_trj_path.split('/')[-2].split('goal_idx')[-1]) in self.eval_tasks]
         eval_task_idxs = [int(eval_trj_path.split('/')[-2].split('goal_idx')[-1]) for eval_trj_path in eval_trj_paths if
                           int(eval_trj_path.split('/')[-2].split('goal_idx')[-1]) in self.eval_tasks]
-
+        extreme_paths = [extreme_trj_path for extreme_trj_path in extreme_trj_paths if
+                      int(extreme_trj_path.split('/')[-2].split('goal_idx')[-1]) in self.extreme_tasks]
+        extreme_task_idxs = [int(extreme_trj_path.split('/')[-2].split('goal_idx')[-1]) for extreme_trj_path in extreme_trj_paths if
+                          int(extreme_trj_path.split('/')[-2].split('goal_idx')[-1]) in self.extreme_tasks]
+        
         obs_train_lst = []
         action_train_lst = []
         reward_train_lst = []
@@ -141,7 +157,14 @@ class OfflineMetaRLAlgorithm(metaclass=abc.ABCMeta):
         next_obs_eval_lst = []
         terminal_eval_lst = []
         task_eval_lst = []
-
+        
+        obs_extreme_lst = []
+        action_extreme_lst = []
+        reward_extreme_lst = []
+        next_obs_extreme_lst = []
+        terminal_extreme_lst = []
+        task_extreme_lst = []
+        
         for train_path, train_task_idx in zip(train_paths, train_task_idxs):
             trj_npy = np.load(train_path, allow_pickle=True)
             obs_train_lst += list(trj_npy[:, 0])
@@ -164,7 +187,17 @@ class OfflineMetaRLAlgorithm(metaclass=abc.ABCMeta):
             terminal_eval_lst += terminal
             task_eval = [eval_task_idx for _ in range(trj_npy.shape[0])]
             task_eval_lst += task_eval
-
+        for extreme_path, extreme_task_idx in zip(extreme_paths, extreme_task_idxs):
+            trj_npy = np.load(eval_path, allow_pickle=True)
+            obs_extreme_lst += list(trj_npy[:, 0])
+            action_extreme_lst += list(trj_npy[:, 1])
+            reward_extreme_lst += list(trj_npy[:, 2])
+            next_obs_extreme_lst += list(trj_npy[:, 3])
+            terminal = [0 for _ in range(trj_npy.shape[0])]
+            terminal[-1] = 1
+            terminal_extreme_lst += terminal
+            task_extreme = [extreme_task_idx for _ in range(trj_npy.shape[0])]
+            task_extreme_lst += task_extreme
 
         # load training buffer
         for i, (
@@ -217,7 +250,31 @@ class OfflineMetaRLAlgorithm(metaclass=abc.ABCMeta):
                 next_obs,
                 **{'env_info': {}},
             )
-        
+        for i, (
+                task_eval,
+                obs,
+                action,
+                reward,
+                next_obs,
+                terminal,
+        ) in enumerate(zip(
+            task_extreme_lst,
+            obs_extreme_lst,
+            action_extreme_lst,
+            reward_extreme_lst,
+            next_obs_extreme_lst,
+            terminal_extreme_lst,
+        )):
+            self.extreme_buffer.add_sample(
+                task_eval,
+                obs,
+                action,
+                reward,
+                terminal,
+                next_obs,
+                **{'env_info': {}},
+            )
+            
     def _try_to_eval(self, epoch):
         if self._can_evaluate():
             self.evaluate(epoch)
@@ -368,7 +425,7 @@ class OfflineMetaRLAlgorithm(metaclass=abc.ABCMeta):
 
         return online_final_returns, online_all_return, offline_final_returns, offline_all_return, np_online_final_returns, np_online_all_return
 
-    def train(self):
+    def train(self, wandb_logger=None):
         '''
         meta-training loop
         '''
@@ -409,6 +466,8 @@ class OfflineMetaRLAlgorithm(metaclass=abc.ABCMeta):
                 self._try_to_eval(it_)
                 gt.stamp('eval')
             self._end_epoch()
+            if wandb_logger:
+                wandb_logger.log(self.eval_statistics)
 
     def data_dict(self, indices, z_means, z_vars):
         data_dict = {}
@@ -420,47 +479,22 @@ class OfflineMetaRLAlgorithm(metaclass=abc.ABCMeta):
         return data_dict
 
     def evaluate(self, epoch):
-
-        if self.eval_statistics is None:
-            self.eval_statistics = OrderedDict()
-
         ### test tasks
-        eval_util.dprint('evaluating on {} test tasks'.format(len(self.eval_tasks)))
-        test_online_final_returns, test_online_all_returns, test_offline_final_returns, test_offline_all_returns, test_np_online_final_returns, test_np_online_all_returns = self._do_eval(self.eval_tasks, epoch, buffer=self.eval_buffer)
-        eval_util.dprint('test online all returns')
-        eval_util.dprint(test_online_all_returns)
-        eval_util.dprint('test offline all returns')
-        eval_util.dprint(test_offline_all_returns)
-        eval_util.dprint('test np_online all returns')
-        eval_util.dprint(test_np_online_all_returns)
-
-        # save the final posterior
-        self.agent.log_diagnostics(self.eval_statistics)
+        tasks = [self.train_tasks, self.eval_tasks, self.extreme_tasks]
+        replays = [self.replay_buffer, self.eval_buffer, self.extreme_buffer]
+        names = ['train', 'moderate', 'extreme']
+        for task, replay, name in zip(tasks, replays, names):
+            online_final, online_all, offline_final, offline_all, np_final, np_all = self._do_eval(task, epoch, replay)
+            self.eval_statistics[f'{name}/avg_final_online'] = np.mean(online_final)
+            self.eval_statistics[f'{name}/avg_final_offline'] = np.mean(offline_final)
+            self.eval_statistics[f'{name}/avg_final_nonprior'] = np.mean(np_final)
+            for idx in range(len(online_final)):
+                self.eval_statistics[f'{name}/{idx}_final_online'] = online_final[idx]
+                self.eval_statistics[f'{name}/{idx}_final_offline'] = offline_final[idx]
+                self.eval_statistics[f'{name}/{idx}_final_nonprior'] = np_final[idx]         
             
-        avg_test_online_final_return = np.mean(test_online_final_returns)
-        avg_test_offline_final_return = np.mean(test_offline_final_returns)
-        avg_test_np_online_final_return = np.mean(test_np_online_final_returns)
-
-        
-        avg_test_online_all_return = np.mean(np.stack(test_online_all_returns), axis=0)
-        avg_test_offline_all_return = np.mean(np.stack(test_offline_all_returns), axis=0)
-        avg_test_np_online_all_return = np.mean(np.stack(test_np_online_all_returns), axis=0)
-            
-        self.eval_statistics['Average_OnlineReturn_all_test_tasks'] = avg_test_online_final_return
-        self.eval_statistics['Average_OfflineReturn_all_test_tasks'] = avg_test_offline_final_return
-        self.eval_statistics['Average_NpOnlineReturn_all_test_tasks'] = avg_test_np_online_final_return
-
-        self.loss['avg_test_online_final_return'] = avg_test_online_final_return
-        self.loss['avg_test_offline_final_return'] = avg_test_offline_final_return
-        self.loss['avg_test_np_online_final_return'] = avg_test_np_online_final_return
-
-        self.loss['avg_test_online_all_return'] = np.mean(avg_test_online_all_return)
-        self.loss['avg_test_offline_all_return'] = np.mean(avg_test_offline_all_return)
-        self.loss['avg_test_np_online_all_return'] = np.mean(avg_test_np_online_all_return)
-
         for key, value in self.eval_statistics.items():
             logger.record_tabular(key, value)
-        self.eval_statistics = None
 
         if self.plotter:
             self.plotter.draw()
