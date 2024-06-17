@@ -90,6 +90,9 @@ class AntGoalEnvCustom(AntEnv):
         state = self.state_vector()
         done = False
         ob = self._get_obs()
+        self._step += 1
+        if self._step >= self._max_episode_steps:
+            done = True
         return ob, reward, done, dict(
             goal_forward=goal_reward,
             reward_ctrl=-ctrl_cost,
