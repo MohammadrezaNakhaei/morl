@@ -107,28 +107,28 @@ class OfflineMetaRLAlgorithm(metaclass=abc.ABCMeta):
         # trj entry format: [obs, action, reward, new_obs]
         if self.sample:
             for i in self.train_tasks:
-                for j in range(self.train_epoch[0], self.train_epoch[1]+1, self.train_epoch[2]):
+                for j in range(self.train_epoch[0], self.train_epoch[1], self.train_epoch[2]):
                     for k in range(self.n_trj):
                         train_trj_paths += [os.path.join(self.data_dir, f"goal_idx{i}", f"trj_evalsample{k}_step{j}.npy")]
             for i in self.eval_tasks:
-                for j in range(self.eval_epoch[0], self.eval_epoch[1]+1, self.eval_epoch[2]):
+                for j in range(self.eval_epoch[0], self.eval_epoch[1], self.eval_epoch[2]):
                     for k in range(self.n_trj):
                         eval_trj_paths += [os.path.join(self.data_dir, f"goal_idx{i}", f"trj_evalsample{k}_step{j}.npy")]
             for i in self.extreme_tasks:
-                for j in range(self.train_epoch[0], self.train_epoch[1]+1, self.train_epoch[2]):
+                for j in range(self.train_epoch[0], self.train_epoch[1], self.train_epoch[2]):
                     for k in range(self.n_trj):
                         extreme_trj_paths += [os.path.join(self.data_dir, f"goal_idx{i}", f"trj_evalsample{k}_step{j}.npy")]                
         else:
             for i in self.train_tasks:
-                for j in range(self.train_epoch[0], self.train_epoch[1]+1, self.train_epoch[2]):
+                for j in range(self.train_epoch[0], self.train_epoch[1], self.train_epoch[2]):
                     for k in range(self.n_trj):
                         train_trj_paths += [os.path.join(self.data_dir, f"goal_idx{i}", f"trj_eval{k}_step{j}.npy")]
             for i in self.eval_tasks:
-                for j in range(self.eval_epoch[0], self.eval_epoch[1]+1, self.eval_epoch[2]):
+                for j in range(self.eval_epoch[0], self.eval_epoch[1], self.eval_epoch[2]):
                     for k in range(self.n_trj):
                         eval_trj_paths += [os.path.join(self.data_dir, f"goal_idx{i}", f"trj_eval{k}_step{j}.npy")]
             for i in self.extreme_tasks:
-                for j in range(self.train_epoch[0], self.train_epoch[1]+1, self.train_epoch[2]):
+                for j in range(self.train_epoch[0], self.train_epoch[1], self.train_epoch[2]):
                     for k in range(self.n_trj):
                         extreme_trj_paths += [os.path.join(self.data_dir, f"goal_idx{i}", f"trj_eval{k}_step{j}.npy")]      
                             
