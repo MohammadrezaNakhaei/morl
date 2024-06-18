@@ -1,5 +1,5 @@
 # pretrain the contrastive task encoder, without policy learning
-
+from copy import deepcopy
 import os
 import sys
 import time
@@ -638,6 +638,7 @@ class EntropyMax(OfflineContrastive):
                                     action_dim=self.args.action_dim,
                                     hidden_sizes=self.args.policy_layers).to(ptu.device)
         
+        
         self.encoder_optimizer = torch.optim.Adam(list(self.encoder.parameters())+list(self.decoder.parameters()), lr=self.args.encoder_lr)
         self.behavior_optimizer = torch.optim.Adam(self.behavior_policy.parameters(),  lr=self.args.encoder_lr)
 
@@ -736,6 +737,124 @@ class EntropyMax(OfflineContrastive):
             print(time_cost)
 
         return rl_losses_agg
+
+
+class EntropyMaxTarget(OfflineContrastive):
+    def __init__(self, args, train_dataset, train_goals, eval_dataset, eval_goals):
+        super().__init__(args, train_dataset, train_goals, eval_dataset, eval_goals)
+        action_size=self.args.act_space.n if self.args.act_space.__class__.__name__ == "Discrete" else self.args.action_dim
+        self.decoder = FlattenMlp(
+            input_size=self.args.obs_dim+self.args.task_embedding_size+action_size,
+            output_size=1+self.args.obs_dim,
+            hidden_sizes=[64,64]
+            ).to(ptu.device)
+        
+        self.behavior_policy = TanhGaussianPolicy(obs_dim=self.args.obs_dim+self.args.task_embedding_size,
+                                    action_dim=self.args.action_dim,
+                                    hidden_sizes=self.args.policy_layers).to(ptu.device)
+        self.target_behavior_policy = deepcopy(self.behavior_policy)
+        
+        
+        self.encoder_optimizer = torch.optim.Adam(list(self.encoder.parameters())+list(self.decoder.parameters()), lr=self.args.encoder_lr)
+        self.behavior_optimizer = torch.optim.Adam(self.behavior_policy.parameters(),  lr=self.args.encoder_lr)
+
+    def update(self, tasks):
+        rl_losses_agg = {}
+        if self.args.log_train_time: 
+            time_cost = {'data_sampling':0, 'negatives_sampling':0, 'update_encoder':0, 'update_rl':0}
+
+        for update in range(self.args.rl_updates_per_iter):
+            if self.args.log_train_time:
+                _t_cost = time.time()
+            #print('data sampling')
+            
+            # sample key, query, negative samples and train encoder
+            # (batchsize, dim)
+            queries, keys = self.sample_positive_pairs(self.args.contrastive_batch_size)
+            obs_q, actions_q, rewards_q, next_obs_q, terms_q = queries
+            obs_k, actions_k, rewards_k, next_obs_k, terms_k = keys
+
+            if self.args.log_train_time:
+                _t_now = time.time()
+                time_cost['data_sampling'] += (_t_now-_t_cost)
+                _t_cost = _t_now
+
+            obs = torch.cat([obs_k, obs_q], dim=0)
+            action = torch.cat([actions_k, actions_q], dim=0)
+            reward = torch.cat([rewards_k, rewards_q], dim=0)
+            next_obs = torch.cat([next_obs_k, next_obs_q], dim=0)
+            with torch.no_grad():
+                z = self.encoder.forward(obs, action, reward, next_obs)
+            extended_state = torch.cat([obs, z], dim=-1)
+            dist_behavior = self.behavior_policy.get_dist(extended_state)
+            behavior_loss = -dist_behavior.log_prob(action).sum()
+
+            # optimize the behavior policy
+            self.behavior_optimizer.zero_grad()
+            behavior_loss.backward()
+            self.behavior_optimizer.step()
+            # (batchsize, N, dim)
+            rewards_neg, next_obs_neg = self.create_negatives(obs_q, actions_q, self.args.n_negative_per_positive, next_state=next_obs_q, reward=rewards_q)
+            obs_neg = obs_q.unsqueeze(1).expand(-1, self.args.n_negative_per_positive, -1) # expand obs_q to (b, n_neg, dim), they share the same (s,a)
+            actions_neg = actions_q.unsqueeze(1).expand(-1, self.args.n_negative_per_positive, -1)
+
+            if self.args.log_train_time:
+                _t_now = time.time()
+                time_cost['negatives_sampling'] += (_t_now-_t_cost)
+                _t_cost = _t_now
+            
+            b_dot_N = self.args.contrastive_batch_size * self.args.n_negative_per_positive
+            q_z = self.encoder.forward(obs_q, actions_q, rewards_q, next_obs_q)
+            k_z = self.encoder.forward(obs_k, actions_k, rewards_k, next_obs_k)
+            neg_z = self.encoder.forward(obs_neg.reshape(b_dot_N, -1), actions_neg.reshape(b_dot_N, -1), 
+                rewards_neg.reshape(b_dot_N, -1), next_obs_neg.reshape(b_dot_N, -1)).view(
+                self.args.contrastive_batch_size, self.args.n_negative_per_positive, -1)
+            contrastive_loss = self.contrastive_loss(q_z, k_z, neg_z)
+
+            z = torch.cat([k_z, q_z])
+            pred = self.decoder(
+                torch.cat([obs, action, z],dim=-1)
+            )
+            target = torch.cat([next_obs, reward], dim=-1)
+            pred_loss = torch.nn.functional.mse_loss(pred, target)
+            extended_state = torch.cat([obs, z], dim=-1)
+            dist_behavior = self.target_behavior_policy.get_dist(extended_state)
+            entropy_loss = -dist_behavior.entropy()
+
+            # update the encoder
+            self.encoder_optimizer.zero_grad()
+            loss = pred_loss*self.args.pred_coeff+contrastive_loss+entropy_loss*self.args.entropy_coeff
+            loss.backward()
+            self.encoder_optimizer.step()
+            ptu.soft_update_from_to(self.behavior_policy, self.target_behavior_policy, self.tau)
+
+            if self.args.log_train_time:
+                _t_now = time.time()
+                time_cost['update_encoder'] += (_t_now-_t_cost)
+                _t_cost = _t_now
+
+            rl_losses = {
+                'contrastive_loss':contrastive_loss.item(), 
+                'prediction_loss': pred_loss.item(),
+                'entropy_loss': entropy_loss.item(),
+                'behavior_loss':behavior_loss.item(),
+                }
+
+            for k, v in rl_losses.items():
+                if update == 0:  # first iterate - create list
+                    rl_losses_agg[k] = [v]
+                else:  # append values
+                    rl_losses_agg[k].append(v)
+        # take mean
+        for k in rl_losses_agg:
+            rl_losses_agg[k] = np.mean(rl_losses_agg[k])
+        self._n_rl_update_steps_total += self.args.rl_updates_per_iter
+
+        if self.args.log_train_time:
+            print(time_cost)
+
+        return rl_losses_agg
+
 
 
 class Predictive(OfflineContrastive):
