@@ -93,7 +93,9 @@ class MIRSoftActorCritic(OfflineMetaRLAlgorithm):
         self.c_optimizer                    = optimizer_class(self.c.parameters(),   lr=self.c_lr)
         self.context_optimizer              = optimizer_class(self.agent.context_encoder.parameters(), lr=self.context_lr)
         self.behavior_optimizer             = optimizer_class(self.behavior_policy.parameters(), lr=self.behavior_lr)
-        self.prediction_optimizer           = optimizer_class(self.decoder.parameters(), lr=self.prediction_lr)
+        self.prediction_optimizer           = optimizer_class(
+            list(self.decoder.parameters()) + list(self.agent.context_encoder.parameters()), 
+            lr=self.prediction_lr)
 
         self._num_steps                     = 0
         self._visit_num_steps_train         = 10
@@ -235,6 +237,7 @@ class MIRSoftActorCritic(OfflineMetaRLAlgorithm):
 
     def _update_target_network(self):
         ptu.soft_update_from_to(self.vf, self.target_vf, self.soft_target_tau)
+        ptu.soft_update_from_to(self.behavior_policy, self.target_behavior_policy, self.soft_target_tau)
 
     def _optimize_c(self, indices, context):
         # data is (task, batch, feat)
