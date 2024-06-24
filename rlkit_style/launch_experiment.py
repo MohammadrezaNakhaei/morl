@@ -17,6 +17,7 @@ from rlkit.envs.wrappers import NormalizedBoxEnv
 from rlkit.torch.sac.policies import TanhGaussianPolicy
 from rlkit.torch.networks import FlattenMlp, MlpEncoder, RecurrentEncoder
 from rlkit.torch.sac.sac import CSROSoftActorCritic
+from rlkit.torch.sac.mutual_info_reduction import MIRSoftActorCritic
 from rlkit.torch.sac.agent import PEARLAgent
 from rlkit.launchers.launcher_util import setup_logger
 import rlkit.torch.pytorch_util as ptu
@@ -98,21 +99,34 @@ def experiment(variant, seed=None):
         latent_dim=latent_dim,
         action_dim=action_dim,
     )
-
+    # critic network for divergence in dual form (see BRAC paper https://arxiv.org/abs/1911.11361)
+    c = FlattenMlp(
+        hidden_sizes=[net_size, net_size, net_size],
+        input_size=obs_dim + action_dim + latent_dim,
+        output_size=1
+    )
+    
     agent = PEARLAgent(
         latent_dim,
         context_encoder,
         policy,
         **variant['algo_params']
     )
+    task_modes = env.task_modes()
     if variant['algo_type'] == 'CSRO':
-        # critic network for divergence in dual form (see BRAC paper https://arxiv.org/abs/1911.11361)
-        c = FlattenMlp(
-            hidden_sizes=[net_size, net_size, net_size],
-            input_size=obs_dim + action_dim + latent_dim,
-            output_size=1
+        if variant['algo_params']['club_use_sa']:
+            club_input_dim = obs_dim + action_dim
+        else:
+            club_input_dim = obs_dim + action_dim + reward_dim if variant['algo_params']['use_next_obs_in_context'] else obs_dim + action_dim
+
+        club_model = encoder_model(
+            hidden_sizes=[200, 200, 200],
+            input_size=club_input_dim,
+            output_size=latent_dim * 2,
+            output_activation=torch.tanh,
+            # output_activation_half=True
         )
-        task_modes = env.task_modes()
+        
         algorithm = CSROSoftActorCritic(
             env=env,
             train_tasks=task_modes['train'],
@@ -122,57 +136,28 @@ def experiment(variant, seed=None):
             latent_dim=latent_dim,
             **variant['algo_params']
         )
-        """
-        if 'interpolation' in variant.keys() and variant['interpolation']:
-            if 'randomize_tasks' in variant.keys() and variant['randomize_tasks']:
-                train_tasks = np.random.choice(len(tasks), size=variant['n_train_tasks'], replace=False)
-                eval_tasks = np.array(list(set(range(len(tasks))).difference(train_tasks)))
-            else:
-                gap = int(variant['n_train_tasks']/variant['n_eval_tasks']) + 1
-                eval_tasks = np.arange(0, variant['n_train_tasks']+variant['n_eval_tasks'], gap) + int(gap/2)
-                train_tasks = np.array(list(set(range(len(tasks))).difference(eval_tasks)))
-            
-            if 'goal_radius' in variant['env_params']:
-                algorithm = CSROSoftActorCritic(
-                    env=env,
-                    train_tasks=train_tasks,
-                    eval_tasks=eval_tasks,
-                    nets=[agent, qf1, qf2, vf, c, club_model],
-                    latent_dim=latent_dim,
-                    goal_radius=variant['env_params']['goal_radius'],
-                    **variant['algo_params']
-                )
-            else:
-                algorithm = CSROSoftActorCritic(
-                    env=env,
-                    train_tasks=train_tasks,
-                    eval_tasks=eval_tasks,
-                    nets=[agent, qf1, qf2, vf, c, club_model],
-                    latent_dim=latent_dim,
-                    **variant['algo_params']
-                )
-        else:
-            if 'goal_radius' in variant['env_params']:
-                algorithm = CSROSoftActorCritic(
-                    env=env,
-                    train_tasks=list(tasks[:variant['n_train_tasks']]),
-                    eval_tasks=list(tasks[-variant['n_eval_tasks']:]),
-                    nets=[agent, qf1, qf2, vf, c, club_model],
-                    latent_dim=latent_dim,
-                    goal_radius=variant['env_params']['goal_radius'],
-                    **variant['algo_params']
-                )
-            else:
-                algorithm = CSROSoftActorCritic(
-                    env=env,
-                    train_tasks=list(tasks[:variant['n_train_tasks']]),
-                    eval_tasks=list(tasks[-variant['n_eval_tasks']:]),
-                    nets=[agent, qf1, qf2, vf, c, club_model],
-                    latent_dim=latent_dim,
-                    **variant['algo_params']
-                )"""
-    else:
-        NotImplemented
+    if variant['algo_type'] == 'MIR':
+        behavior_policy = TanhGaussianPolicy(
+            hidden_sizes=[net_size, net_size, net_size],
+            obs_dim=obs_dim + latent_dim,
+            latent_dim=latent_dim,
+            action_dim=action_dim,
+        )
+        decoder = FlattenMlp(
+            hidden_sizes = [net_size, net_size, net_size],
+            input_size = obs_dim + action_dim + latent_dim,
+            output_size= obs_dim + 1,           
+        )
+        algorithm = MIRSoftActorCritic(
+            env=env,
+            train_tasks=task_modes['train'],
+            eval_tasks=task_modes['moderate'],
+            extreme_tasks=task_modes['extreme'],
+            nets=[agent, qf1, qf2, vf, c, behavior_policy, decoder],
+            latent_dim=latent_dim,
+            **variant['algo_params']
+        )
+        
 
     # optionally load pre-trained weights
     if variant['path_to_weights'] is not None:

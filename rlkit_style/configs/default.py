@@ -66,7 +66,15 @@ default_config = dict(
         dropout=0.1, # dropout for context encoder
         # data_dir="./data/walker_randparam_new_norm", # default data directory
         data_dir="./data", # default data directory
-        club_use_sa=False
+        club_use_sa=False, 
+        # """ Parameters for mutual information reduction based on guassian behavior policy, MIR method """
+        behavior_lr=3e-4,
+        prediction_lr=1e-3,
+        prediction_loss_weight=1.0,
+        MI_loss_weight=1.0,
+        use_MI=True,
+        use_prediction=True,
+        use_target_behavior=True,
     ),
     util_params=dict(
         base_log_dir='./output',
