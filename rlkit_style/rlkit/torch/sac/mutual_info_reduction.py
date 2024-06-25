@@ -65,7 +65,6 @@ class MIRSoftActorCritic(OfflineMetaRLAlgorithm):
         self.c_lr                           = kwargs['c_lr']
         self.context_lr                     = kwargs['context_lr']
         self.behavior_lr                    = kwargs['behavior_lr']
-        self.prediction_lr                  = kwargs['prediction_lr']
         self.z_loss_weight                  = kwargs['z_loss_weight']
         self.prediction_loss_weight         = kwargs['prediction_loss_weight']
         self.mi_loss_weight                 = kwargs['MI_loss_weight']
@@ -91,12 +90,9 @@ class MIRSoftActorCritic(OfflineMetaRLAlgorithm):
         self.qf2_optimizer                  = optimizer_class(self.qf2.parameters(), lr=self.qf_lr)
         self.vf_optimizer                   = optimizer_class(self.vf.parameters(),  lr=self.vf_lr)
         self.c_optimizer                    = optimizer_class(self.c.parameters(),   lr=self.c_lr)
-        self.context_optimizer              = optimizer_class(self.agent.context_encoder.parameters(), lr=self.context_lr)
+        self.context_optimizer              = optimizer_class(
+            list(self.agent.context_encoder.parameters()) + list(self.decoder.parameters()), lr=self.context_lr)
         self.behavior_optimizer             = optimizer_class(self.behavior_policy.parameters(), lr=self.behavior_lr)
-        self.prediction_optimizer           = optimizer_class(
-            list(self.decoder.parameters()) + list(self.agent.context_encoder.parameters()), 
-            lr=self.prediction_lr)
-
         self._num_steps                     = 0
         self._visit_num_steps_train         = 10
         self._alpha_var                     = torch.tensor(1.)

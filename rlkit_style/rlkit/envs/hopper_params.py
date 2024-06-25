@@ -8,9 +8,12 @@ from . import register_env
 
 class HopperENV(mujoco_env.MujocoEnv, utils.EzPickle):
     def __init__(self):
+        self._max_episode_steps = 200
+        self._step = 0
         mujoco_env.MujocoEnv.__init__(self, "hopper.xml", 4)
         utils.EzPickle.__init__(self)
-        
+
+                
     def step(self, a):
         posbefore = self.sim.data.qpos[0]
         self.do_simulation(a, self.frame_skip)
@@ -22,6 +25,10 @@ class HopperENV(mujoco_env.MujocoEnv, utils.EzPickle):
         s = self.state_vector()
         done = not (np.isfinite(s).all() and (np.abs(s[2:]) < 100).all() and
                     (height > .7) and (abs(ang) < .2))
+        # done = False
+        self._step += 1
+        if self._step >= self._max_episode_steps:
+            done = True
         ob = self._get_obs()
         return ob, reward, done, {}
 

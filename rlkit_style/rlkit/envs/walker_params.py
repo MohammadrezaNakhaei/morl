@@ -8,6 +8,8 @@ from . import register_env
 
 class Walker2dENV(mujoco_env.MujocoEnv, utils.EzPickle):
     def __init__(self,):
+        self._max_episode_steps = 200
+        self._step = 0
         mujoco_env.MujocoEnv.__init__(self, "walker2d.xml", 5)
         utils.EzPickle.__init__(self)
 
@@ -21,6 +23,10 @@ class Walker2dENV(mujoco_env.MujocoEnv, utils.EzPickle):
         reward -= 1e-3 * np.square(a).sum()
         done = not (height > 0.8 and height < 2.0 and
                     ang > -1.0 and ang < 1.0)
+        # done = False
+        self._step += 1
+        if self._step >= self._max_episode_steps:
+            done = True
         # done = False
         ob = self._get_obs()
         return ob, reward, done, {}
