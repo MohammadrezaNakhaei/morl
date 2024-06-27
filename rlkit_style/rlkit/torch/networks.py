@@ -13,6 +13,8 @@ from rlkit.torch.data_management.normalizer import TorchFixedNormalizer
 from rlkit.torch.modules import LayerNorm
 import pdb
 # import rlkit.torch.transformer as transformer
+from vector_quantize_pytorch import FSQ
+
 
 def identity(x):
     return x
@@ -210,5 +212,23 @@ class RecurrentEncoder(FlattenMlp):
         self.hidden = self.hidden.new_full((1, num_tasks, self.hidden_dim), 0)
 
 
-
+class MlpQuantizedEncoder(Mlp):
+    def __init__(self, *args, levels=[8,8],**kwargs):
+        self.save_init_params(locals())
+        super().__init__(*args, **kwargs)
+        self.levels = levels
+        self.fsq = FSQ(levels)
+        self.latent_dim = self.output_size//len(self.levels)
+    
+    def forward(self, input, return_preactivations=False):
+        if return_preactivations:
+            out, pre = super().forward(input, return_preactivations)
+        else:
+            out = super().forward(input, return_preactivations)
+            
+        leading_shape = input.shape[:-1]
+        out = out.view(*leading_shape, self.latent_dim, len(self.levels))
+        z, indices = self.fsq(out)
+        z = z.view(*leading_shape, self.output_size)
+        return z
 

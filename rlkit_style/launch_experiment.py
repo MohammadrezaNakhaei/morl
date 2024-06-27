@@ -15,7 +15,7 @@ from itertools import product
 from rlkit.envs import ENVS
 from rlkit.envs.wrappers import NormalizedBoxEnv
 from rlkit.torch.sac.policies import TanhGaussianPolicy
-from rlkit.torch.networks import FlattenMlp, MlpEncoder, RecurrentEncoder
+from rlkit.torch.networks import FlattenMlp, MlpEncoder, RecurrentEncoder, MlpQuantizedEncoder
 from rlkit.torch.sac.sac import CSROSoftActorCritic
 from rlkit.torch.sac.mutual_info_reduction import MIRSoftActorCritic
 from rlkit.torch.sac.agent import PEARLAgent
@@ -55,7 +55,7 @@ def experiment(variant, seed=None):
     context_encoder_output_dim = latent_dim * 2 if variant['algo_params']['use_information_bottleneck'] else latent_dim
     net_size = variant['net_size']
     recurrent = variant['algo_params']['recurrent']
-    encoder_model = RecurrentEncoder if recurrent else MlpEncoder
+    encoder_model = RecurrentEncoder if recurrent else MlpQuantizedEncoder
 
     if variant['algo_params']['club_use_sa']:
         club_input_dim = obs_dim + action_dim
@@ -73,7 +73,7 @@ def experiment(variant, seed=None):
         hidden_sizes=[200, 200, 200],
         input_size=context_encoder_input_dim,
         output_size=context_encoder_output_dim,
-        output_activation=torch.tanh,
+        # output_activation=torch.tanh,
         layer_norm=variant['algo_params']['layer_norm'] if 'layer_norm' in variant['algo_params'].keys() else False
     )
 
