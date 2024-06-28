@@ -162,9 +162,6 @@ class MIRSoftActorCritic(OfflineMetaRLAlgorithm):
             r = batch['rewards'][None, ...]
         no = batch['next_observations'][None, ...]
         t = batch['terminals'][None, ...]
-        o = (o-self.mu_state)/self.std_state
-        no = (no-self.mu_state)/self.std_state
-        r = (r-self.mu_reward)/self.std_reward
         return [o, a, r, no, t]
 
     def sample_sac(self, indices):
@@ -362,7 +359,7 @@ class MIRSoftActorCritic(OfflineMetaRLAlgorithm):
         if self.use_prediciton:
             # extended_state = torch.cat([obs, actions, task_z], dim=-1)
             pred = self.decoder(t, b, obs, actions, task_z)
-            target = torch.cat([next_obs-obs, rewards_flat], dim=-1)
+            target = torch.cat([(next_obs-obs)/self.std_state, (rewards_flat-self.mu_reward)/self.std_reward], dim=-1)
             prediction_loss = self.pred_criterion(pred, target)
             prediction_loss.backward(retain_graph=True)
             self.loss['prediction'] = prediction_loss.item()
