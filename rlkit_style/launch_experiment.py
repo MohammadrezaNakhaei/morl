@@ -3,6 +3,8 @@ Launcher for experiments with CSRO
 
 """
 import os
+os.environ['MUJOCO_PY_MJPRO_PATH'] = '~/.mujoco/mujoco210'
+
 import pathlib
 import numpy as np
 import click
@@ -16,13 +18,14 @@ from rlkit.envs import ENVS
 from rlkit.envs.wrappers import NormalizedBoxEnv
 from rlkit.torch.sac.policies import TanhGaussianPolicy
 from rlkit.torch.networks import FlattenMlp, MlpEncoder, RecurrentEncoder, MlpQuantizedEncoder
-from rlkit.torch.sac.sac import CSROSoftActorCritic
+from rlkit.torch.sac.sac import CSROSoftActorCritic, CSROPrediction
 from rlkit.torch.sac.mutual_info_reduction import MIRSoftActorCritic
 from rlkit.torch.sac.agent import PEARLAgent
 from rlkit.launchers.launcher_util import setup_logger
 import rlkit.torch.pytorch_util as ptu
 from configs.default import default_config
 import pdb
+
 
 
 def global_seed(seed=0):
@@ -55,7 +58,7 @@ def experiment(variant, seed=None):
     context_encoder_output_dim = latent_dim * 2 if variant['algo_params']['use_information_bottleneck'] else latent_dim
     net_size = variant['net_size']
     recurrent = variant['algo_params']['recurrent']
-    encoder_model = RecurrentEncoder if recurrent else MlpQuantizedEncoder
+    encoder_model = RecurrentEncoder if recurrent else MlpEncoder
 
     if variant['algo_params']['club_use_sa']:
         club_input_dim = obs_dim + action_dim
@@ -73,7 +76,7 @@ def experiment(variant, seed=None):
         hidden_sizes=[200, 200, 200],
         input_size=context_encoder_input_dim,
         output_size=context_encoder_output_dim,
-        # output_activation=torch.tanh,
+        output_activation=torch.tanh,
         layer_norm=variant['algo_params']['layer_norm'] if 'layer_norm' in variant['algo_params'].keys() else False
     )
 
@@ -136,6 +139,38 @@ def experiment(variant, seed=None):
             latent_dim=latent_dim,
             **variant['algo_params']
         )
+        
+    if variant['algo_type'] == 'CSROPrediction':
+        if variant['algo_params']['club_use_sa']:
+            club_input_dim = obs_dim + action_dim
+        else:
+            club_input_dim = obs_dim + action_dim + reward_dim if variant['algo_params']['use_next_obs_in_context'] else obs_dim + action_dim
+
+        club_model = encoder_model(
+            hidden_sizes=[200, 200, 200],
+            input_size=club_input_dim,
+            output_size=latent_dim * 2,
+            output_activation=torch.tanh,
+            # output_activation_half=True
+        )
+        
+        decoder = FlattenMlp(
+            hidden_sizes = [net_size, net_size, net_size],
+            input_size = obs_dim + action_dim + latent_dim,
+            output_size= obs_dim + 1,           
+        )
+        
+        algorithm = CSROPrediction(
+            env=env,
+            train_tasks=task_modes['train'],
+            eval_tasks=task_modes['moderate'],
+            extreme_tasks=task_modes['extreme'],
+            nets=[agent, qf1, qf2, vf, c, club_model],
+            latent_dim=latent_dim,
+            decoder=decoder,
+            **variant['algo_params']
+        )
+        
     if variant['algo_type'] == 'MIR':
         behavior_policy = TanhGaussianPolicy(
             hidden_sizes=[net_size, net_size, net_size],
@@ -220,7 +255,6 @@ def deep_update_dict(fr, to):
 @click.option('--seed', default=0)
 @click.option('--exp_name', default=None)
 def main(config, gpu, seed=0, exp_name=None):
-
     variant = default_config
     if config:
         with open(os.path.join(config)) as f:
