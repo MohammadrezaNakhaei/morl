@@ -69,12 +69,12 @@ default_config = dict(
         club_use_sa=False, 
         # """ Parameters for mutual information reduction based on guassian behavior policy, MIR method """
         behavior_lr=3e-4,
-        prediction_lr=1e-3,
         prediction_loss_weight=1.0,
         MI_loss_weight=1.0,
         use_MI=True,
         use_prediction=True,
         use_target_behavior=True,
+        generator_dim=20,
     ),
     util_params=dict(
         base_log_dir='./output',

@@ -20,6 +20,7 @@ from rlkit.torch.sac.policies import TanhGaussianPolicy
 from rlkit.torch.networks import FlattenMlp, MlpEncoder, RecurrentEncoder, MlpQuantizedEncoder
 from rlkit.torch.sac.sac import CSROSoftActorCritic, CSROPrediction
 from rlkit.torch.sac.mutual_info_reduction import MIRSoftActorCritic
+from rlkit.torch.sac.csro_gan import CSROGAN
 from rlkit.torch.sac.agent import PEARLAgent
 from rlkit.launchers.launcher_util import setup_logger
 import rlkit.torch.pytorch_util as ptu
@@ -36,6 +37,34 @@ def global_seed(seed=0):
 
 def experiment(variant, seed=None):
 
+    algorithm = initialize(variant, seed)
+    
+    DEBUG = variant['util_params']['debug']
+    os.environ['DEBUG'] = str(int(DEBUG))
+
+    # create logging directory
+    # TODO support Docker
+    exp_id = 'debug' if DEBUG else variant['util_params']['exp_name']
+    experiment_log_dir, wandb_logger = setup_logger(
+        variant['env_name'],
+        variant=variant,
+        exp_id=exp_id,
+        base_log_dir=variant['util_params']['base_log_dir'],
+        seed=seed,
+        snapshot_mode="gap_and_last",
+        snapshot_gap=5
+    )
+
+    # optionally save eval trajectories as pkl files
+    if variant['algo_params']['dump_eval_paths']:
+        pickle_dir = experiment_log_dir + '/eval_trajectories'
+        pathlib.Path(pickle_dir).mkdir(parents=True, exist_ok=True)
+
+    # run the algorithm
+    algorithm.train(wandb_logger)
+    wandb_logger.finish()
+
+def initialize(variant, seed=None):
     # create multi-task environment and sample tasks, normalize obs if provided with 'normalizer.npz'
     if 'normalizer.npz' in os.listdir(variant['algo_params']['data_dir']):
         obs_absmax = np.load(os.path.join(variant['algo_params']['data_dir'], 'normalizer.npz'))['abs_max']
@@ -60,18 +89,6 @@ def experiment(variant, seed=None):
     recurrent = variant['algo_params']['recurrent']
     encoder_model = RecurrentEncoder if recurrent else MlpEncoder
 
-    if variant['algo_params']['club_use_sa']:
-        club_input_dim = obs_dim + action_dim
-    else:
-        club_input_dim = obs_dim + action_dim + reward_dim if variant['algo_params']['use_next_obs_in_context'] else obs_dim + action_dim
-
-    club_model = encoder_model(
-        hidden_sizes=[200, 200, 200],
-        input_size=club_input_dim,
-        output_size=latent_dim * 2,
-        output_activation=torch.tanh,
-        # output_activation_half=True
-    )
     context_encoder = encoder_model(
         hidden_sizes=[200, 200, 200],
         input_size=context_encoder_input_dim,
@@ -116,6 +133,7 @@ def experiment(variant, seed=None):
         **variant['algo_params']
     )
     task_modes = env.task_modes()
+    
     if variant['algo_type'] == 'CSRO':
         if variant['algo_params']['club_use_sa']:
             club_input_dim = obs_dim + action_dim
@@ -192,6 +210,30 @@ def experiment(variant, seed=None):
             latent_dim=latent_dim,
             **variant['algo_params']
         )
+    
+    if variant['algo_type'] == 'GAN':
+        generator = FlattenMlp(
+            hidden_sizes = [200, 200, 200],
+            input_size = latent_dim+obs_dim+variant['algo_params']['generator_dim'],
+            output_size = action_dim,
+            output_activation = torch.tanh
+         )
+        discriminator = FlattenMlp(
+            hidden_sizes = [net_size,],
+            input_size = action_dim,
+            output_size = 1, 
+            output_activation = torch.sigmoid,
+        )
+        
+        algorithm = CSROGAN(
+            env=env,
+            train_tasks=task_modes['train'],
+            eval_tasks=task_modes['moderate'],
+            extreme_tasks=task_modes['extreme'],
+            nets=[agent, qf1, qf2, vf, c, generator, discriminator],
+            latent_dim=latent_dim,
+            **variant['algo_params']
+        )
         
 
     # optionally load pre-trained weights
@@ -213,31 +255,8 @@ def experiment(variant, seed=None):
     if ptu.gpu_enabled():
         algorithm.to()
 
-    # debugging triggers a lot of printing and logs to a debug directory
-    DEBUG = variant['util_params']['debug']
-    os.environ['DEBUG'] = str(int(DEBUG))
-
-    # create logging directory
-    # TODO support Docker
-    exp_id = 'debug' if DEBUG else variant['util_params']['exp_name']
-    experiment_log_dir, wandb_logger = setup_logger(
-        variant['env_name'],
-        variant=variant,
-        exp_id=exp_id,
-        base_log_dir=variant['util_params']['base_log_dir'],
-        seed=seed,
-        snapshot_mode="gap_and_last",
-        snapshot_gap=5
-    )
-
-    # optionally save eval trajectories as pkl files
-    if variant['algo_params']['dump_eval_paths']:
-        pickle_dir = experiment_log_dir + '/eval_trajectories'
-        pathlib.Path(pickle_dir).mkdir(parents=True, exist_ok=True)
-
-    # run the algorithm
-    algorithm.train(wandb_logger)
-    wandb_logger.finish()
+    return algorithm
+    
 
 def deep_update_dict(fr, to):
     ''' update dict of dicts with new values '''
