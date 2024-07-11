@@ -92,3 +92,27 @@ class SimpleReplayBuffer(ReplayBuffer):
 
     def num_steps_can_sample(self):
         return self._size
+    
+    def random_sequence_batch(self, batch_size, k):
+        transitions = dict(
+            observations = np.zeros((batch_size, k, self._observation_dim)),
+            actions = np.zeros((batch_size, k, self._action_dim)),
+            next_observations = np.zeros((batch_size, k, self._observation_dim)),
+            rewards = np.zeros((batch_size, k, 1)),
+            sparse_rewards = np.zeros((batch_size, k, 1)),
+            terminals = np.zeros((batch_size, k, 1)),
+            masks = np.ones((batch_size, k))
+        )
+        indices = np.random.randint(0, self._size-k, batch_size)
+        terminated = np.zeros((batch_size,), dtype=np.bool_)
+        for i in range(k):
+            batch = self.sample_data(indices+i)
+            # mask with zeros
+            for key in batch.keys():
+                batch[key][terminated] = 0
+                transitions[key][:, i] = batch[key]
+            transitions['masks'][:,i] = terminated
+            ind, _ = np.where(batch['terminals'])
+            terminated[ind] = 1
+        return transitions
+                
