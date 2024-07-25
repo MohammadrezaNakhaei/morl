@@ -225,7 +225,7 @@ class CSROGAN(OfflineMetaRLAlgorithm):
         self.c_optimizer.zero_grad()
         c_loss.backward(retain_graph=True)
         self.c_optimizer.step()
-        
+
     def FOCAL_z_loss(self, indices, task_z, task_z_vars, b, epsilon=1e-3, threshold=0.999):
         pos_z_loss = 0.
         neg_z_loss = 0.
@@ -256,7 +256,7 @@ class CSROGAN(OfflineMetaRLAlgorithm):
         d_loss_real = criterion1(out_real, target_real)
         d_loss_fake = criterion2(out_fake, target_fake)
         return d_loss_real, d_loss_fake
-    
+
     def _generator_loss(self, t, b, fake_actions):
         criterion = nn.BCELoss(reduction='mean')
         out = self.discriminator(t, b, fake_actions)
@@ -298,7 +298,7 @@ class CSROGAN(OfflineMetaRLAlgorithm):
         # BRAC:
         # div_estimate = self._divergence.dual_estimate(
         #     s2, a2_p, a2_b, self._c_fn)
-        
+
         c_loss = self._divergence.dual_critic_loss(obs, new_actions.detach(), actions, task_z.detach())
         self.c_optimizer.zero_grad()
         c_loss.backward(retain_graph=True)
@@ -319,19 +319,20 @@ class CSROGAN(OfflineMetaRLAlgorithm):
         self.loss["target_v_values"] = torch.mean(target_v_values).item()
 
         if self.use_club:
-            eps = torch.randn((t*b, self.generator_dim), device=ptu.device)
-            fake_actions = self.generator(t, b, obs, task_z, eps)
-            d_loss_real, d_loss_fake = self._discriminator_loss(t, b, actions, fake_actions)
-            self.discriminator_optimizer.zero_grad()
-            discriminator_loss = d_loss_fake + d_loss_real
-            discriminator_loss.backward(retain_graph=True)
-            self.discriminator_optimizer.step()
-            
-            self.generator_optimizer.zero_grad()
-            generator_loss =  self._generator_loss(t, b, fake_actions)
-            generator_loss.backward(retain_graph=True)
-            self.generator_optimizer.step()
-        
+            for _ in range(5):
+                eps = torch.randn((t*b, self.generator_dim), device=ptu.device)
+                fake_actions = self.generator(t, b, obs, task_z, eps)
+                d_loss_real, d_loss_fake = self._discriminator_loss(t, b, actions, fake_actions)
+                self.discriminator_optimizer.zero_grad()
+                discriminator_loss = d_loss_fake + d_loss_real
+                discriminator_loss.backward(retain_graph=True)
+                self.discriminator_optimizer.step()
+
+                self.generator_optimizer.zero_grad()
+                generator_loss =  self._generator_loss(t, b, fake_actions)
+                generator_loss.backward(retain_graph=True)
+                self.generator_optimizer.step()
+
             self.loss["generator_loss"] = generator_loss.item()
             self.loss['discriminator_loss'] = discriminator_loss.item()
 
@@ -346,10 +347,10 @@ class CSROGAN(OfflineMetaRLAlgorithm):
             fake_actions = fake_actions.reshape(t, b, -1)
             mu = fake_actions.mean(1, keepdim=True)
             diff = fake_actions-mu
-            cov = 1/(b-1) * torch.transpose(diff, 1, 2) @ diff 
-            dist = torch.distributions.MultivariateNormal(mu.view(t,-1), cov)
+            cov = 1/(b-1) * torch.transpose(diff, 1, 2) @ diff
+            dist = torch.distributions.MultivariateNormal(mu.view(t,-1), cov+1e-5*torch.eye(action_dim, device=ptu.device))
             entorpy = dist.entropy()
-            MI_loss = -self.club_model_loss_weight*torch.mean(entorpy)
+            MI_loss = -self.club_loss_weight*torch.mean(entorpy)
             MI_loss.backward(retain_graph=True)
             self.loss["MI_loss"] = MI_loss.item()
 
@@ -434,7 +435,7 @@ class CSROGAN(OfflineMetaRLAlgorithm):
             # Manually zero the gradients after updating weights
             self._alpha_var.grad.zero_()
         self.loss["a_loss"] = a_loss.item()
-        
+
         for i in range(len(self.agent.z_means[0])):
             z_mean = ptu.get_numpy(self.agent.z_means[0][i])
             name = f'train/z_mean_{i}'
@@ -475,7 +476,7 @@ class CSROGAN(OfflineMetaRLAlgorithm):
             target_vf=self.target_vf.state_dict(),
             context_encoder=self.agent.context_encoder.state_dict(),
             generator=self.generator.state_dict(),
-            discriminator=self.discriminator.state_dict(), 
+            discriminator=self.discriminator.state_dict(),
             c=self.c.state_dict(),
             )
         return snapshot
