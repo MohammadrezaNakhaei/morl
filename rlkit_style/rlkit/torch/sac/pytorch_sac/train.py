@@ -39,7 +39,7 @@ import pdb
 #     return env
 
 class Workspace(object):
-    def __init__(self, cfg, env_name, env=None, mujoco=False, goal_idx=0):
+    def __init__(self, cfg, env_name, env=None, mujoco=False, goal_idx=0, logger=True):
         # self.work_dir = os.getcwd()
         self.work_dir = "./offline_dataset"
         self.work_dir = os.path.join(self.work_dir, env_name, f'goal_idx{goal_idx}')
@@ -48,12 +48,12 @@ class Workspace(object):
         cfg.env_name = env_name
         cfg.goal_idx = goal_idx
         self.cfg = cfg
-
-        self.logger = Logger(self.work_dir,
-                             save_tb=cfg.log_save_tb,
-                             log_frequency=cfg.log_frequency,
-                             agent=cfg.agent.name,
-                             cfgs=cfg)
+        if logger:
+            self.logger = Logger(self.work_dir,
+                                save_tb=cfg.log_save_tb,
+                                log_frequency=cfg.log_frequency,
+                                agent=cfg.agent.name,
+                                cfgs=cfg)
 
         utils.set_seed_everywhere(cfg.seed)
         self.device = torch.device(cfg.device)
