@@ -3,6 +3,7 @@ Launcher for experiments with CSRO
 
 """
 import os
+
 os.environ['MUJOCO_PY_MJPRO_PATH'] = '~/.mujoco/mujoco210'
 
 import pathlib
@@ -20,6 +21,8 @@ from rlkit.torch.sac.policies import TanhGaussianPolicy
 from rlkit.torch.networks import FlattenMlp, MlpEncoder, RecurrentEncoder, MlpQuantizedEncoder
 from rlkit.torch.sac.sac import CSROSoftActorCritic, CSROPrediction
 from rlkit.torch.sac.mutual_info_reduction import MIRSoftActorCritic
+from rlkit.torch.sac.mutual_estimator_reduction import MIERSoftActorCritic
+from rlkit.torch.sac.mi_estimator import MIKernelEstimator
 from rlkit.torch.sac.csro_gan import CSROGAN
 from rlkit.torch.sac.agent import PEARLAgent
 from rlkit.launchers.launcher_util import setup_logger
@@ -38,7 +41,7 @@ def global_seed(seed=0):
 def experiment(variant, seed=None):
 
     algorithm = initialize(variant, seed)
-    
+
     DEBUG = variant['util_params']['debug']
     os.environ['DEBUG'] = str(int(DEBUG))
 
@@ -71,7 +74,7 @@ def initialize(variant, seed=None):
         env = NormalizedBoxEnv(ENVS[variant['env_name']](**variant['env_params']), obs_absmax=obs_absmax)
     else:
         env = NormalizedBoxEnv(ENVS[variant['env_name']](**variant['env_params']))
-    
+
     if seed is not None:
         global_seed(seed)
         env.seed(seed)
@@ -125,7 +128,7 @@ def initialize(variant, seed=None):
         input_size=obs_dim + action_dim + latent_dim,
         output_size=1
     )
-    
+
     agent = PEARLAgent(
         latent_dim,
         context_encoder,
@@ -133,7 +136,7 @@ def initialize(variant, seed=None):
         **variant['algo_params']
     )
     task_modes = env.task_modes()
-    
+
     if variant['algo_type'] == 'CSRO':
         if variant['algo_params']['club_use_sa']:
             club_input_dim = obs_dim + action_dim
@@ -147,7 +150,7 @@ def initialize(variant, seed=None):
             output_activation=torch.tanh,
             # output_activation_half=True
         )
-        
+
         algorithm = CSROSoftActorCritic(
             env=env,
             train_tasks=task_modes['train'],
@@ -157,7 +160,7 @@ def initialize(variant, seed=None):
             latent_dim=latent_dim,
             **variant['algo_params']
         )
-        
+
     if variant['algo_type'] == 'CSROPrediction':
         if variant['algo_params']['club_use_sa']:
             club_input_dim = obs_dim + action_dim
@@ -171,13 +174,13 @@ def initialize(variant, seed=None):
             output_activation=torch.tanh,
             # output_activation_half=True
         )
-        
+
         decoder = FlattenMlp(
             hidden_sizes = [net_size, net_size, net_size],
             input_size = obs_dim + action_dim + latent_dim,
-            output_size= obs_dim + 1,           
+            output_size= obs_dim + 1,
         )
-        
+
         algorithm = CSROPrediction(
             env=env,
             train_tasks=task_modes['train'],
@@ -188,7 +191,7 @@ def initialize(variant, seed=None):
             decoder=decoder,
             **variant['algo_params']
         )
-        
+
     if variant['algo_type'] == 'MIR':
         behavior_policy = TanhGaussianPolicy(
             hidden_sizes=[net_size, net_size, net_size],
@@ -199,7 +202,7 @@ def initialize(variant, seed=None):
         decoder = FlattenMlp(
             hidden_sizes = [net_size, net_size, net_size],
             input_size = obs_dim + action_dim + latent_dim,
-            output_size= obs_dim + 1,           
+            output_size= obs_dim + 1,
         )
         algorithm = MIRSoftActorCritic(
             env=env,
@@ -210,7 +213,30 @@ def initialize(variant, seed=None):
             latent_dim=latent_dim,
             **variant['algo_params']
         )
-    
+
+    if variant['algo_type'] == 'MIER': # mutual information estimator reduction
+        mi_estimator = MIKernelEstimator(
+            device = 'cuda:0' if torch.cuda.is_available() else 'cpu',
+            number_of_samples = variant['algo_params']['embedding_batch_size']//8,
+            x_size = obs_dim+action_dim,
+            y_size = latent_dim,
+            use_joint = True,
+        )
+        decoder = FlattenMlp(
+            hidden_sizes = [net_size, net_size, net_size],
+            input_size = obs_dim + action_dim + latent_dim,
+            output_size= obs_dim + 1,
+        )
+        algorithm = MIERSoftActorCritic(
+            env=env,
+            train_tasks=task_modes['train'],
+            eval_tasks=task_modes['moderate'],
+            extreme_tasks=task_modes['extreme'],
+            nets=[agent, qf1, qf2, vf, c, mi_estimator, decoder],
+            latent_dim=latent_dim,
+            **variant['algo_params']
+        )
+
     if variant['algo_type'] == 'GAN':
         generator = FlattenMlp(
             hidden_sizes = [200, 200, 200],
@@ -221,10 +247,10 @@ def initialize(variant, seed=None):
         discriminator = FlattenMlp(
             hidden_sizes = [net_size,],
             input_size = action_dim,
-            output_size = 1, 
+            output_size = 1,
             output_activation = torch.sigmoid,
         )
-        
+
         algorithm = CSROGAN(
             env=env,
             train_tasks=task_modes['train'],
@@ -234,7 +260,7 @@ def initialize(variant, seed=None):
             latent_dim=latent_dim,
             **variant['algo_params']
         )
-        
+
 
     # optionally load pre-trained weights
     if variant['path_to_weights'] is not None:
@@ -256,7 +282,7 @@ def initialize(variant, seed=None):
         algorithm.to()
 
     return algorithm
-    
+
 
 def deep_update_dict(fr, to):
     ''' update dict of dicts with new values '''
@@ -288,4 +314,3 @@ def main(config, gpu, seed=0, exp_name=None):
 
 if __name__ == "__main__":
     main()
-
