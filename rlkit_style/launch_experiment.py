@@ -23,7 +23,7 @@ from rlkit.torch.sac.sac import CSROSoftActorCritic, CSROPrediction
 from rlkit.torch.sac.mutual_info_reduction import MIRSoftActorCritic
 from rlkit.torch.sac.mutual_estimator_reduction import MIERSoftActorCritic
 from rlkit.torch.sac.mi_estimator import MIKernelEstimator
-from rlkit.torch.sac.csro_gan import CSROGAN
+from rlkit.torch.sac.csro_gan import CSROGAN, CSROCondGAN
 from rlkit.torch.sac.agent import PEARLAgent
 from rlkit.launchers.launcher_util import setup_logger
 import rlkit.torch.pytorch_util as ptu
@@ -261,7 +261,29 @@ def initialize(variant, seed=None):
             **variant['algo_params']
         )
 
+    if variant['algo_type'] == 'CondGAN':
+        generator = FlattenMlp(
+            hidden_sizes = [200, 200, 200],
+            input_size = latent_dim+obs_dim+variant['algo_params']['generator_dim'],
+            output_size = action_dim,
+            output_activation = torch.tanh
+         )
+        discriminator = FlattenMlp(
+            hidden_sizes = [net_size, net_size],
+            input_size = action_dim+obs_dim+latent_dim,
+            output_size = 1,
+            output_activation = torch.sigmoid,
+        )
 
+        algorithm = CSROCondGAN(
+            env=env,
+            train_tasks=task_modes['train'],
+            eval_tasks=task_modes['moderate'],
+            extreme_tasks=task_modes['extreme'],
+            nets=[agent, qf1, qf2, vf, c, generator, discriminator],
+            latent_dim=latent_dim,
+            **variant['algo_params']
+        )
     # optionally load pre-trained weights
     if variant['path_to_weights'] is not None:
         path = variant['path_to_weights']
